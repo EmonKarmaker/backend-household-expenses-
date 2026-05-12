@@ -1,0 +1,151 @@
+"""Schemas for UtilityBill, ShoppingEntry/Item, ItemCatalog, MealLog."""
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
+
+MoneyDecimal = Annotated[Decimal, PlainSerializer(str, return_type=str)]
+MonthStr = Annotated[str, Field(pattern=r"^\d{4}-\d{2}$")]
+
+
+# ---------------------------------------------------------------------------
+# UtilityBill
+# ---------------------------------------------------------------------------
+
+class UtilityBillCreate(BaseModel):
+    month: MonthStr
+    type: Literal["electricity", "internet", "gas", "water", "other"]
+    amount: Decimal
+    paid_by: int
+    paid_at: date
+    note: str | None = None
+
+
+class UtilityBillUpdate(BaseModel):
+    month: MonthStr | None = None
+    type: Literal["electricity", "internet", "gas", "water", "other"] | None = None
+    amount: Decimal | None = None
+    paid_by: int | None = None
+    paid_at: date | None = None
+    note: str | None = None
+
+
+class UtilityBillResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, json_encoders={Decimal: str})
+
+    id: int
+    household_id: int
+    month: str
+    type: str
+    amount: MoneyDecimal
+    paid_by: int
+    paid_at: date
+    photo_url: str | None = None
+    note: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# ShoppingItem  (defined first — referenced by ShoppingEntry schemas)
+# ---------------------------------------------------------------------------
+
+class ShoppingItemCreate(BaseModel):
+    name: str
+    price: Decimal
+    quantity: Decimal = Decimal("1")
+    category: Literal["meal", "household", "personal"]
+    target_user_id: int | None = None
+
+
+class ShoppingItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, json_encoders={Decimal: str})
+
+    id: int
+    entry_id: int
+    name: str
+    price: MoneyDecimal
+    quantity: MoneyDecimal
+    category: str
+    target_user_id: int | None = None
+    line_total: MoneyDecimal  # computed @property on the ORM model
+    created_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# ShoppingEntry  (items[] included in same request per plan)
+# ---------------------------------------------------------------------------
+
+class ShoppingEntryCreate(BaseModel):
+    month: MonthStr
+    paid_by: int
+    items: list[ShoppingItemCreate] = Field(min_length=1)
+    note: str | None = None
+
+
+class ShoppingEntryUpdate(BaseModel):
+    """Items are replaced via a dedicated endpoint, not patched inline."""
+    month: MonthStr | None = None
+    paid_by: int | None = None
+    note: str | None = None
+
+
+class ShoppingEntryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, json_encoders={Decimal: str})
+
+    id: int
+    household_id: int
+    month: str
+    paid_by: int
+    photo_url: str | None = None
+    note: str | None = None
+    items: list[ShoppingItemResponse] = []
+    created_at: datetime
+    updated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# ItemCatalog  (read-only — written by the shopping router automatically)
+# ---------------------------------------------------------------------------
+
+class ItemCatalogResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    household_id: int
+    name: str
+    default_category: str
+    last_used_at: datetime
+    use_count: int
+
+
+# ---------------------------------------------------------------------------
+# MealLog
+# ---------------------------------------------------------------------------
+
+class MealLogUpsert(BaseModel):
+    """Single entry for bulk upsert. user_id + log_date is the unique key."""
+    user_id: int
+    log_date: date
+    meal_count: Decimal = Decimal("0")
+    guest_meals: Decimal = Decimal("0")
+    note: str | None = None
+
+
+class MealLogBulkUpsertRequest(BaseModel):
+    entries: list[MealLogUpsert] = Field(min_length=1)
+
+
+class MealLogResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, json_encoders={Decimal: str})
+
+    id: int
+    user_id: int
+    log_date: date
+    meal_count: MoneyDecimal
+    guest_meals: MoneyDecimal
+    total_meals: MoneyDecimal  # computed @property on the ORM model
+    note: str | None = None
+    created_at: datetime
+    updated_at: datetime
