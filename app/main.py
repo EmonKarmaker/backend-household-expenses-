@@ -37,10 +37,6 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "env": settings.app_env}
 
 
-# Routers will be registered here as they're built in Weekend 1.
-# Example (commented until the router exists):
-# from app.routers import auth, setup, users, rooms
-# app.include_router(setup.router, prefix="/api/v1/setup", tags=["setup"])
-# app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
-# app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
-# app.include_router(rooms.router, prefix="/api/v1/rooms", tags=["rooms"])
+from app.routers import setup
+
+app.include_router(setup.router, prefix="/api/v1/setup", tags=["setup"])
