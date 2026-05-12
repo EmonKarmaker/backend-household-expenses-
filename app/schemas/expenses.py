@@ -131,13 +131,19 @@ class MealLogUpsert(BaseModel):
     """Single entry for bulk upsert. user_id + log_date is the unique key."""
     user_id: int
     log_date: date
-    meal_count: Decimal = Decimal("0")
-    guest_meals: Decimal = Decimal("0")
+    meal_count: Decimal = Field(default=Decimal("0"), ge=0, le=10)
+    guest_meals: Decimal = Field(default=Decimal("0"), ge=0, le=20)
     note: str | None = None
 
 
 class MealLogBulkUpsertRequest(BaseModel):
     entries: list[MealLogUpsert] = Field(min_length=1)
+
+
+class MealLogUpdate(BaseModel):
+    meal_count: Annotated[Decimal, Field(ge=0, le=10)] | None = None
+    guest_meals: Annotated[Decimal, Field(ge=0, le=20)] | None = None
+    note: str | None = None
 
 
 class MealLogResponse(BaseModel):
