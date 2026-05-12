@@ -37,7 +37,8 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "env": settings.app_env}
 
 
-from app.routers import auth, setup
+from app.routers import auth, rooms, setup
 
 app.include_router(setup.router, prefix="/api/v1/setup", tags=["setup"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+app.include_router(rooms.router, prefix="/api/v1/rooms", tags=["rooms"])
