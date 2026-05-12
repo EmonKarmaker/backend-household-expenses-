@@ -57,6 +57,14 @@ class ShoppingItemCreate(BaseModel):
     target_user_id: int | None = None
 
 
+class ShoppingItemUpdate(BaseModel):
+    name: str | None = None
+    price: Decimal | None = None
+    quantity: Decimal | None = None
+    category: Literal["meal", "household", "personal"] | None = None
+    target_user_id: int | None = None  # explicitly nullable — send null to clear
+
+
 class ShoppingItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True, json_encoders={Decimal: str})
 
@@ -77,15 +85,12 @@ class ShoppingItemResponse(BaseModel):
 
 class ShoppingEntryCreate(BaseModel):
     month: MonthStr
-    paid_by: int
     items: list[ShoppingItemCreate] = Field(min_length=1)
     note: str | None = None
 
 
 class ShoppingEntryUpdate(BaseModel):
-    """Items are replaced via a dedicated endpoint, not patched inline."""
-    month: MonthStr | None = None
-    paid_by: int | None = None
+    """PATCH accepts multipart form (note + optional photo); this schema documents the updatable fields."""
     note: str | None = None
 
 
