@@ -36,14 +36,21 @@ def _serialize(value: Any) -> Any:
     return value
 
 
-def model_to_dict(obj: Any) -> dict[str, Any]:
+def model_to_dict(
+    obj: Any,
+    exclude: frozenset[str] = frozenset({"password_hash"}),
+) -> dict[str, Any]:
     """Snapshot a SQLAlchemy model instance into a plain, JSON-serializable dict.
 
     Only reads mapped column attributes — skips relationships and internal state.
     Call this *before* mutating or deleting the object so the snapshot is accurate.
     """
     mapper = sa_inspect(type(obj))
-    return {col.key: _serialize(getattr(obj, col.key)) for col in mapper.columns}
+    return {
+        col.key: _serialize(getattr(obj, col.key))
+        for col in mapper.columns
+        if col.key not in exclude
+    }
 
 
 async def log_audit(
