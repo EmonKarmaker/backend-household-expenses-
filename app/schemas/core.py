@@ -109,3 +109,36 @@ class RoomAssignmentResponse(BaseModel):
     user_id: int
     effective_month: str
     created_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# User invite / management
+# ---------------------------------------------------------------------------
+
+class UserPatchRequest(BaseModel):
+    name: str | None = None
+    email: EmailStr | None = None
+
+
+class InviteUserRequest(BaseModel):
+    name: str
+    email: EmailStr
+    room_id: int
+    deposit_amount: Decimal
+    effective_month: MonthStr | None = None
+
+
+class InviteUserResponse(BaseModel):
+    user: UserResponse
+    email_sent: bool
+
+
+class AssignRoomRequest(BaseModel):
+    room_id: int
+    effective_month: MonthStr
+
+
+class ProcessLeavingRequest(BaseModel):
+    leave_date: date
+    deductions: Decimal = Decimal("0")
+    deduction_reason: str | None = None
