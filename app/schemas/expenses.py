@@ -17,7 +17,6 @@ class UtilityBillCreate(BaseModel):
     month: MonthStr
     type: Literal["electricity", "internet", "gas", "water", "other"]
     amount: Decimal
-    paid_by: int
     paid_at: date
     note: str | None = None
 
@@ -26,7 +25,6 @@ class UtilityBillUpdate(BaseModel):
     month: MonthStr | None = None
     type: Literal["electricity", "internet", "gas", "water", "other"] | None = None
     amount: Decimal | None = None
-    paid_by: int | None = None
     paid_at: date | None = None
     note: str | None = None
 

@@ -69,13 +69,13 @@ async def _save_photo(file: UploadFile, directory: Path) -> str:
 
 async def save_receipt_photo(file: UploadFile | None) -> str | None:
     """Save a utility-bill or shopping receipt photo. Returns DB-ready path or None."""
-    if file is None:
+    if file is None or not file.filename:
         return None
     return await _save_photo(file, _ensure_dir(settings.receipt_storage_path))
 
 
 async def save_asset_photo(file: UploadFile | None) -> str | None:
     """Save a shared-asset photo. Returns DB-ready path or None."""
-    if file is None:
+    if file is None or not file.filename:
         return None
     return await _save_photo(file, _ensure_dir(settings.asset_storage_path))
