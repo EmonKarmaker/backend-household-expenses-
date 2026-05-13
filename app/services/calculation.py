@@ -34,14 +34,22 @@ class UserMonthBreakdown(BaseModel):
 
     id: int
     name: str
+
+    # Rent zone — paid directly to landlord, NOT part of inter-flatmate settlement.
     rent_owed: MoneyDecimal
+
+    # Settlement zone — passes through the household pool; settles between flatmates.
     utility_owed: MoneyDecimal
     household_owed: MoneyDecimal
     personal_owed: MoneyDecimal
     meal_owed: MoneyDecimal
-    total_owed: MoneyDecimal
-    total_paid: MoneyDecimal
-    balance: MoneyDecimal
+    settlement_owed: MoneyDecimal     # = util + household + personal + meal
+    total_paid: MoneyDecimal          # what they paid through the pool
+    settlement_balance: MoneyDecimal  # = total_paid - settlement_owed (sums to zero)
+
+    # Legacy aggregates kept for the UI's "total owed this month" display.
+    total_owed: MoneyDecimal          # rent_owed + settlement_owed
+    balance: MoneyDecimal             # total_paid - total_owed (includes rent — does NOT sum to zero)
 
 
 class MonthSummary(BaseModel):
@@ -306,7 +314,8 @@ async def calculate_month(
         h_owed = household_owed[uid]
         p_owed = personal_owed[uid]
         m_owed = meal_owed[uid]
-        t_owed = r_owed + u_owed + h_owed + p_owed + m_owed
+        s_owed = u_owed + h_owed + p_owed + m_owed  # settlement zone only
+        t_owed = r_owed + s_owed                    # everything
         t_paid = total_paid[uid]
         breakdowns.append(UserMonthBreakdown(
             id=uid,
@@ -316,8 +325,10 @@ async def calculate_month(
             household_owed=h_owed,
             personal_owed=p_owed,
             meal_owed=m_owed,
-            total_owed=t_owed,
+            settlement_owed=s_owed,
             total_paid=t_paid,
+            settlement_balance=t_paid - s_owed,
+            total_owed=t_owed,
             balance=t_paid - t_owed,
         ))
 
