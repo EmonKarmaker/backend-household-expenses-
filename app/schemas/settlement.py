@@ -42,3 +42,20 @@ class SettlementResponse(BaseModel):
     paid_at: datetime | None = None
     paid_marked_by: int | None = None
     created_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Month close response
+# ---------------------------------------------------------------------------
+
+class MonthCloseResponse(BaseModel):
+    month_id: str
+    status: str
+    closed_at: datetime
+    closed_by: int
+    settlements: list[SettlementResponse]
+
+
+class MonthReopenResponse(BaseModel):
+    month_id: str
+    status: str
