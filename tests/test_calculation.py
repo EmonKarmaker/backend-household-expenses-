@@ -106,3 +106,29 @@ async def test_penny_perfect_rent(db, household, make_room, make_user):
     )
     # Distribution: two users pay 3333.33, one pays 3333.34
     assert rents == [Decimal("3333.33"), Decimal("3333.33"), Decimal("3333.34")]
+
+
+# ---------------------------------------------------------------------------
+# Test 4 — _distribute unit test: precision, edge cases
+# ---------------------------------------------------------------------------
+
+def test_distribute_no_precision_loss():
+    """Direct unit test of _distribute — verifies penny-perfect on awkward inputs."""
+    from app.services.calculation import ZERO, _distribute
+
+    # Three identical weights summing to 100.00 → 33.33 / 33.33 / 33.34
+    result = _distribute(Decimal("100.00"), [Decimal("1")] * 3)
+    assert sum(result) == Decimal("100.00")
+    assert sorted(result) == [Decimal("33.33"), Decimal("33.33"), Decimal("33.34")]
+
+    # Awkward weights with a small residual
+    result = _distribute(Decimal("10.00"), [Decimal("1"), Decimal("2"), Decimal("3")])
+    assert sum(result) == Decimal("10.00")
+
+    # Zero total
+    result = _distribute(ZERO, [Decimal("1"), Decimal("2")])
+    assert result == [ZERO, ZERO]
+
+    # Single item gets everything
+    result = _distribute(Decimal("99.99"), [Decimal("1")])
+    assert result == [Decimal("99.99")]

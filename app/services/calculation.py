@@ -9,8 +9,9 @@ largest-remainder method to guarantee penny-perfect totals.
 import calendar
 from datetime import date
 from decimal import ROUND_FLOOR, Decimal
+from typing import Annotated
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, PlainSerializer
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,30 +22,36 @@ CENT     = Decimal("0.01")
 ZERO     = Decimal("0")
 FOUR_DP  = Decimal("0.0001")
 
+MoneyDecimal = Annotated[Decimal, PlainSerializer(str, return_type=str)]
+
 
 # ---------------------------------------------------------------------------
 # Output models
 # ---------------------------------------------------------------------------
 
 class UserMonthBreakdown(BaseModel):
+    model_config = ConfigDict(json_encoders={Decimal: str})
+
     id: int
     name: str
-    rent_owed: Decimal
-    utility_owed: Decimal
-    household_owed: Decimal
-    personal_owed: Decimal
-    meal_owed: Decimal
-    total_owed: Decimal
-    total_paid: Decimal
-    balance: Decimal
+    rent_owed: MoneyDecimal
+    utility_owed: MoneyDecimal
+    household_owed: MoneyDecimal
+    personal_owed: MoneyDecimal
+    meal_owed: MoneyDecimal
+    total_owed: MoneyDecimal
+    total_paid: MoneyDecimal
+    balance: MoneyDecimal
 
 
 class MonthSummary(BaseModel):
+    model_config = ConfigDict(json_encoders={Decimal: str})
+
     month_id: str
     household_id: int
-    meal_pool: Decimal
-    total_meals: Decimal
-    cost_per_meal: Decimal
+    meal_pool: MoneyDecimal
+    total_meals: MoneyDecimal
+    cost_per_meal: MoneyDecimal
     users: list[UserMonthBreakdown]
 
 
@@ -72,7 +79,8 @@ def _distribute(total: Decimal, weights: list[Decimal]) -> list[Decimal]:
     floored = [r.quantize(CENT, rounding=ROUND_FLOOR) for r in raw]
     residual = total - sum(floored)
 
-    n_extra = int(round(float(residual / CENT)))
+    n_extra = int((residual / CENT).quantize(Decimal("1")))
+    n_extra = max(0, min(n_extra, len(weights)))
     if n_extra > 0:
         # Rank indices by fractional part descending; stable sort keeps original
         # order for ties (deterministic tiebreaker = lower index wins).
