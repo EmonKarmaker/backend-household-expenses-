@@ -59,3 +59,11 @@ class MonthCloseResponse(BaseModel):
 class MonthReopenResponse(BaseModel):
     month_id: str
     status: str
+
+
+# ---------------------------------------------------------------------------
+# Settlement mark-paid request
+# ---------------------------------------------------------------------------
+
+class MarkSettlementPaidRequest(BaseModel):
+    paid: bool
