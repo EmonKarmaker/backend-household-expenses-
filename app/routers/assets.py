@@ -14,6 +14,10 @@ from app.models.assets import SharedAsset
 from app.models.core import User
 from app.schemas.assets import AssetContributionInput, SharedAssetResponse, SharedAssetUpdate
 from app.services.asset_svc import (
+    AssetNotFound,
+    InvalidContributionSum,
+    InvalidContributors,
+    InvalidTotalCost,
     create_asset_svc,
     dispose_asset_svc,
     get_asset_or_404,
@@ -52,9 +56,11 @@ async def get_asset(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SharedAssetResponse:
-    return SharedAssetResponse.model_validate(
-        await get_asset_or_404(asset_id, current_user.household_id, db)
-    )
+    try:
+        asset = await get_asset_or_404(asset_id, current_user.household_id, db)
+    except AssetNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+    return SharedAssetResponse.model_validate(asset)
 
 
 @router.post("", response_model=SharedAssetResponse, status_code=status.HTTP_201_CREATED)
@@ -72,22 +78,29 @@ async def create_asset(
     try:
         contributions = _contributions_adapter.validate_python(json.loads(contributions_json))
     except (json.JSONDecodeError, ValidationError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
     photo_url = await save_asset_photo(photo)
 
-    asset = await create_asset_svc(
-        household_id=current_user.household_id,
-        bought_by_user_id=current_user.id,
-        name=name,
-        description=description,
-        purchase_date=purchase_date,
-        total_cost=total_cost,
-        requires_buyin_from_new_members=requires_buyin_from_new_members,
-        contributions=contributions,
-        photo_url=photo_url,
-        db=db,
-    )
+    try:
+        asset = await create_asset_svc(
+            household_id=current_user.household_id,
+            bought_by_user_id=current_user.id,
+            name=name,
+            description=description,
+            purchase_date=purchase_date,
+            total_cost=total_cost,
+            requires_buyin_from_new_members=requires_buyin_from_new_members,
+            contributions=contributions,
+            photo_url=photo_url,
+            db=db,
+        )
+    except InvalidTotalCost as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    except InvalidContributionSum as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    except InvalidContributors as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
     return SharedAssetResponse.model_validate(asset)
 
 
@@ -98,9 +111,11 @@ async def update_asset(
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> SharedAssetResponse:
-    return SharedAssetResponse.model_validate(
-        await update_asset_svc(asset_id, current_user.household_id, body, current_user.id, db)
-    )
+    try:
+        asset = await update_asset_svc(asset_id, current_user.household_id, body, current_user.id, db)
+    except AssetNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+    return SharedAssetResponse.model_validate(asset)
 
 
 @router.post("/{asset_id}/dispose", response_model=SharedAssetResponse)
@@ -109,6 +124,8 @@ async def dispose_asset(
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> SharedAssetResponse:
-    return SharedAssetResponse.model_validate(
-        await dispose_asset_svc(asset_id, current_user.household_id, current_user.id, db)
-    )
+    try:
+        asset = await dispose_asset_svc(asset_id, current_user.household_id, current_user.id, db)
+    except AssetNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+    return SharedAssetResponse.model_validate(asset)

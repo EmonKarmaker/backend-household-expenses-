@@ -3,13 +3,15 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.models.assets import SharedAsset
 from app.schemas.assets import AssetContributionInput, SharedAssetUpdate
 from app.services.asset_svc import (
+    AssetNotFound,
+    InvalidContributionSum,
+    InvalidContributors,
     create_asset_svc,
     dispose_asset_svc,
     get_asset_or_404,
@@ -104,12 +106,12 @@ async def test_create_asset_valid_split(db, household, make_room, make_user):
 # ---------------------------------------------------------------------------
 
 async def test_create_asset_bad_contribution_sum(db, household, make_room, make_user):
-    """sum(contributions)=1500 but total_cost=3000 → HTTPException 422."""
+    """sum(contributions)=1500 but total_cost=3000 → InvalidContributionSum."""
     room = await make_room(household)
     ua = await make_user(household, room, name="Alice")
     ub = await make_user(household, room, name="Bob")
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(InvalidContributionSum) as exc_info:
         await create_asset_svc(
             household_id=household.id,
             bought_by_user_id=ua.id,
@@ -122,8 +124,7 @@ async def test_create_asset_bad_contribution_sum(db, household, make_room, make_
             photo_url=None,
             db=db,
         )
-    assert exc_info.value.status_code == 422
-    assert "does not equal total_cost" in exc_info.value.detail
+    assert "does not equal total_cost" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
@@ -131,11 +132,11 @@ async def test_create_asset_bad_contribution_sum(db, household, make_room, make_
 # ---------------------------------------------------------------------------
 
 async def test_create_asset_invalid_contributor(db, household, make_room, make_user):
-    """user_id 999999 doesn't belong to household → 422."""
+    """user_id 999999 doesn't belong to household → InvalidContributors."""
     room = await make_room(household)
     ua = await make_user(household, room, name="Alice")
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(InvalidContributors) as exc_info:
         await create_asset_svc(
             household_id=household.id,
             bought_by_user_id=ua.id,
@@ -148,8 +149,7 @@ async def test_create_asset_invalid_contributor(db, household, make_room, make_u
             photo_url=None,
             db=db,
         )
-    assert exc_info.value.status_code == 422
-    assert "999999" in exc_info.value.detail
+    assert "999999" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
@@ -266,13 +266,11 @@ async def test_dispose_asset(db, household, make_room, make_user):
 # ---------------------------------------------------------------------------
 
 async def test_cross_household_asset_404(db, household, make_room, make_user):
-    """get_asset_or_404 with wrong household_id raises HTTPException 404."""
+    """get_asset_or_404 with wrong household_id raises AssetNotFound."""
     room = await make_room(household)
     user = await make_user(household, room, name="Alice")
 
     asset = await _make_asset(household, user, db)
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(AssetNotFound):
         await get_asset_or_404(asset.id, household_id=99_999, db=db)
-    assert exc_info.value.status_code == 404
-    assert exc_info.value.detail == "Asset not found"

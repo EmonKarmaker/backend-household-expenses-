@@ -5,7 +5,6 @@ Extracted from the router so tests can call these directly.
 from datetime import date
 from decimal import Decimal
 
-from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -17,6 +16,26 @@ from app.utils.audit import log_audit, model_to_dict
 
 ZERO = Decimal("0")
 CENT = Decimal("0.01")
+
+
+# ---------------------------------------------------------------------------
+# Domain errors
+# ---------------------------------------------------------------------------
+
+class AssetNotFound(Exception):
+    pass
+
+
+class InvalidTotalCost(Exception):
+    pass
+
+
+class InvalidContributionSum(Exception):
+    pass
+
+
+class InvalidContributors(Exception):
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -41,7 +60,7 @@ async def get_asset_or_404(
     )
     asset = result.scalar_one_or_none()
     if asset is None:
-        raise HTTPException(status_code=404, detail="Asset not found")
+        raise AssetNotFound(f"Asset {asset_id} not found")
     return asset
 
 
@@ -63,16 +82,15 @@ async def create_asset_svc(
     db: AsyncSession,
 ) -> SharedAsset:
     if total_cost <= ZERO:
-        raise HTTPException(status_code=422, detail="total_cost must be positive")
+        raise InvalidTotalCost("total_cost must be positive")
 
     if not contributions:
-        raise HTTPException(status_code=422, detail="At least one contribution is required")
+        raise InvalidContributionSum("At least one contribution is required")
 
     contrib_sum = sum(c.amount for c in contributions)
     if abs(contrib_sum - total_cost) > CENT:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Contributions sum ({contrib_sum}) does not equal total_cost ({total_cost})",
+        raise InvalidContributionSum(
+            f"Contributions sum ({contrib_sum}) does not equal total_cost ({total_cost})"
         )
 
     requested_ids = {c.user_id for c in contributions}
@@ -86,9 +104,8 @@ async def create_asset_svc(
     valid_ids = {row[0] for row in result.all()}
     invalid = requested_ids - valid_ids
     if invalid:
-        raise HTTPException(
-            status_code=422,
-            detail=f"User IDs not found in household or inactive: {sorted(invalid)}",
+        raise InvalidContributors(
+            f"User IDs not found in household or inactive: {sorted(invalid)}"
         )
 
     asset = SharedAsset(
@@ -151,7 +168,7 @@ async def update_asset_svc(
     asset = await get_asset_or_404(asset_id, household_id, db)
     before = model_to_dict(asset)
 
-    for field, value in updates.model_dump(exclude_none=True).items():
+    for field, value in updates.model_dump(exclude_unset=True).items():
         setattr(asset, field, value)
     await db.flush()
     await db.refresh(asset)
