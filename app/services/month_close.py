@@ -138,7 +138,7 @@ async def reopen_month(
         db,
         action="update",
         entity="Month",
-        entity_id=0,
+        entity_id=int(month_id.replace("-", "")),
         user_id=reopened_by_user_id,
         note=f"Month {month_id} reopened",
     )
