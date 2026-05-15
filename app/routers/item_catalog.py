@@ -37,8 +37,8 @@ async def search_catalog(
     )
 
     if q and q.strip():
-        pattern = f"%{q.strip().lower()}%"
-        stmt = stmt.where(func.lower(ItemCatalog.name).like(pattern))
+        safe_q = q.strip().lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        stmt = stmt.where(func.lower(ItemCatalog.name).like(f"%{safe_q}%", escape="\\"))
 
     result = await db.execute(stmt)
     return [ItemCatalogResponse.model_validate(row) for row in result.scalars().all()]
