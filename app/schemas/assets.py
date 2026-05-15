@@ -12,6 +12,12 @@ MoneyDecimal = Annotated[Decimal, PlainSerializer(str, return_type=str)]
 # AssetContribution
 # ---------------------------------------------------------------------------
 
+class AssetContributionInput(BaseModel):
+    """Input for a single contribution when creating an asset via the API."""
+    user_id: int
+    amount: Decimal
+
+
 class AssetContributionCreate(BaseModel):
     user_id: int
     amount: Decimal
@@ -72,10 +78,8 @@ class SharedAssetCreate(BaseModel):
 class SharedAssetUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
-    purchase_date: date | None = None
-    total_cost: Decimal | None = None
-    requires_buyin_from_new_members: bool | None = None
     status: Literal["active", "disposed"] | None = None
+    requires_buyin_from_new_members: bool | None = None
 
 
 class SharedAssetResponse(BaseModel):
