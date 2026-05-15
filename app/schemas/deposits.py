@@ -12,7 +12,6 @@ class SecurityDepositCreate(BaseModel):
     user_id: int
     amount: Decimal
     deposited_at: date
-    held_by_user_id: int
 
 
 class SecurityDepositUpdate(BaseModel):
