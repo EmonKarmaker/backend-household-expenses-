@@ -22,6 +22,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import ValidationError
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -141,30 +142,26 @@ async def _upsert_catalog(
     items: list[ShoppingItemCreate],
     now: datetime,
 ) -> None:
-    """Best-effort catalog upsert in a savepoint — failure is logged, never raised."""
+    """Atomic catalog upsert via PostgreSQL ON CONFLICT — no race conditions."""
     try:
         async with db.begin_nested():
             for item in items:
-                name_lower = item.name.strip().lower()
-                result = await db.execute(
-                    select(ItemCatalog).where(
-                        ItemCatalog.household_id == household_id,
-                        func.lower(ItemCatalog.name) == name_lower,
-                    )
+                stmt = pg_insert(ItemCatalog).values(
+                    household_id=household_id,
+                    name=item.name.strip(),
+                    default_category=item.category,
+                    last_used_at=now,
+                    use_count=1,
                 )
-                catalog = result.scalar_one_or_none()
-                if catalog is None:
-                    db.add(ItemCatalog(
-                        household_id=household_id,
-                        name=item.name.strip(),
-                        default_category=item.category,
-                        last_used_at=now,
-                        use_count=1,
-                    ))
-                else:
-                    catalog.use_count += 1
-                    catalog.last_used_at = now
-                    catalog.default_category = item.category  # most-recent category wins
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["household_id", "name"],
+                    set_={
+                        "use_count": ItemCatalog.use_count + 1,
+                        "last_used_at": now,
+                        "default_category": item.category,
+                    },
+                )
+                await db.execute(stmt)
     except Exception as exc:
         logger.warning("item_catalog upsert failed (non-fatal): %s", exc)
 
