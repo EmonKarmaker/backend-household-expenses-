@@ -87,6 +87,22 @@ For each router, also create matching Pydantic schemas in `app/schemas/`.
 - **Never echo raw env vars in logs** — mask DB URLs with scheme+host+port+"***"
 - **Supabase pooler ports** — Session pooler (5432) for Alembic, Transaction pooler (6543) for the async runtime; username = `postgres.<PROJECT_REF>`
 
+## Frontend integration
+
+The committed `docs/openapi.json` is the stable API contract for frontend codegen.
+
+**Regenerate the contract** (run from `backend/`):
+```bash
+python scripts/export_openapi.py
+```
+
+**Generate TypeScript types** (run from the frontend repo):
+```bash
+npx openapi-typescript docs/openapi.json -o src/api/types.ts
+```
+
+Re-run the export and commit `docs/openapi.json` whenever an endpoint, request body, or response model changes.
+
 ## Database backup
 
 Set up daily backups before deploying:
