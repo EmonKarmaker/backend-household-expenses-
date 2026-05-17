@@ -30,7 +30,7 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot  = Split-Path $PSScriptRoot -Parent
 $BackupDir = Join-Path $RepoRoot 'backups'
 $LogFile   = Join-Path $BackupDir 'backup.log'
-$EnvFile   = Join-Path $RepoRoot '.env'
+$EnvFile   = Join-Path $RepoRoot '.env.backup'
 $KeepCount = 14
 
 # ---------------------------------------------------------------------------

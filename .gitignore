@@ -43,3 +43,4 @@ htmlcov/
 
 # Test artifact — root-level only; docs/openapi.json is tracked
 /openapi.json
+.env.backup
