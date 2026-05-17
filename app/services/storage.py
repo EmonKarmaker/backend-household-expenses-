@@ -14,6 +14,7 @@ import uuid
 from pathlib import Path
 
 import cloudinary
+import cloudinary.exceptions
 import cloudinary.uploader
 from fastapi import HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
