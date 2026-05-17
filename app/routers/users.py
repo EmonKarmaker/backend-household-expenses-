@@ -13,14 +13,34 @@ from app.config import get_settings
 from app.database import get_db
 from app.models.core import Room, RoomAssignment, User
 from app.models.deposits import SecurityDeposit
+from app.schemas.assets import AssetBuyinRequest, AssetBuyinResponse
 from app.schemas.core import (
     AssignRoomRequest,
     InviteUserRequest,
     InviteUserResponse,
+    ProcessLeavingAssetRefund,
     ProcessLeavingRequest,
+    ProcessLeavingResponse,
     RoomAssignmentResponse,
     UserPatchRequest,
     UserResponse,
+)
+from app.services.buyin import (
+    AssetNotActive as BuyinAssetNotActive,
+    AssetNotInHousehold as BuyinAssetNotInHousehold,
+    InvalidBuyinAmount,
+    NoPendingRefunds,
+    UserAlreadyLeft as BuyinUserAlreadyLeft,
+    UserNotInHousehold as BuyinUserNotInHousehold,
+    buyin_to_asset_svc,
+)
+from app.services.leaving import (
+    InvalidLeaveDate,
+    LastActiveMember,
+    UserAlreadyLeft,
+    UserIsAdmin,
+    UserNotInHousehold,
+    process_leaving_svc,
 )
 from app.services.email import send_invite_email
 from app.utils.audit import log_audit, model_to_dict
@@ -319,98 +339,102 @@ async def transfer_admin(
     return UserResponse.model_validate(target)
 
 
-@router.post("/{user_id}/process-leaving", response_model=UserResponse)
+@router.post("/{user_id}/process-leaving", response_model=ProcessLeavingResponse)
 async def process_leaving(
     user_id: int,
     body: ProcessLeavingRequest,
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
-) -> UserResponse:
-    user = await _get_user_or_404(user_id, current_user.household_id, db)
-
-    if user.is_admin:
+) -> ProcessLeavingResponse:
+    try:
+        result = await process_leaving_svc(
+            user_id=user_id,
+            household_id=current_user.household_id,
+            leave_date=body.leave_date,
+            admin_id=current_user.id,
+            db=db,
+        )
+    except UserNotInHousehold:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    except UserAlreadyLeft:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User has already left the household",
+        )
+    except UserIsAdmin:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Transfer the admin role before processing this user's departure",
         )
-
-    active_count = await db.scalar(
-        select(func.count()).select_from(User).where(
-            User.household_id == current_user.household_id,
-            User.left_at.is_(None),
-        )
-    )
-    if active_count <= 1:
+    except LastActiveMember:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Cannot remove the last active member of the household",
         )
+    except InvalidLeaveDate as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
-    today_utc = datetime.now(timezone.utc).date()
-    if body.leave_date > today_utc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Leave date cannot be in the future",
-        )
-    if body.leave_date < user.joined_at:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Leave date cannot be before the user joined",
-        )
-
-    before_user = model_to_dict(user)
-    user.left_at = body.leave_date
-    await db.flush()
-    await db.refresh(user)
-
-    await log_audit(
-        db,
-        action="update",
-        entity="User",
-        entity_id=user.id,
-        user_id=current_user.id,
-        before=before_user,
-        after=model_to_dict(user),
-        note="processed leaving",
+    logger.info("User id=%s processed as left by admin user_id=%s", user_id, current_user.id)
+    return ProcessLeavingResponse(
+        user_id=result.user_id,
+        left_at=result.left_at,
+        dues=result.dues,
+        deposit_amount=result.deposit_amount,
+        deposit_applied_to_dues=result.deposit_applied_to_dues,
+        deposit_cash_refund=result.deposit_cash_refund,
+        remaining_dues=result.remaining_dues,
+        asset_refunds=[
+            ProcessLeavingAssetRefund(
+                asset_id=r.asset_id,
+                asset_name=r.asset_name,
+                amount=r.amount,
+                paid_by_user=r.paid_by_user,
+            )
+            for r in result.asset_refunds
+        ],
+        total_cash_owed_to_leaver=result.total_cash_owed_to_leaver,
     )
 
-    # Reconcile the most recent held deposit, if any
-    deposit_result = await db.execute(
-        select(SecurityDeposit)
-        .where(SecurityDeposit.user_id == user.id, SecurityDeposit.status == "held")
-        .order_by(SecurityDeposit.id.desc())
-        .limit(1)
+
+@router.post(
+    "/{user_id}/buyin",
+    response_model=AssetBuyinResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def buyin_to_asset(
+    user_id: int,
+    body: AssetBuyinRequest,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AssetBuyinResponse:
+    try:
+        result = await buyin_to_asset_svc(
+            new_member_id=user_id,
+            household_id=current_user.household_id,
+            asset_id=body.asset_id,
+            amount=body.amount,
+            admin_id=current_user.id,
+            db=db,
+        )
+    except BuyinUserNotInHousehold:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found in household")
+    except BuyinUserAlreadyLeft:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User has already left the household")
+    except BuyinAssetNotInHousehold:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found in household")
+    except BuyinAssetNotActive:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Asset is disposed and cannot be bought into")
+    except InvalidBuyinAmount as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    except NoPendingRefunds:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Asset has no pending refunds to buy into")
+
+    logger.info(
+        "User id=%s bought into asset_id=%s, contribution_id=%s",
+        user_id, body.asset_id, result.contribution_id,
     )
-    deposit = deposit_result.scalar_one_or_none()
-
-    if deposit is not None:
-        before_deposit = model_to_dict(deposit)
-        deposit.deduction_amount = body.deductions
-        deposit.deduction_reason = body.deduction_reason
-        deposit.refunded_at = body.leave_date
-        deposit.final_refund = max(
-            Decimal("0"),
-            deposit.amount - body.deductions - deposit.applied_to_dues,
-        )
-        deposit.status = "partial" if body.deductions > Decimal("0") else "refunded"
-
-        await db.flush()
-        await db.refresh(deposit)
-
-        await log_audit(
-            db,
-            action="update",
-            entity="SecurityDeposit",
-            entity_id=deposit.id,
-            user_id=current_user.id,
-            before=before_deposit,
-            after=model_to_dict(deposit),
-            note="reconciled on leaving",
-        )
-        logger.info(
-            "SecurityDeposit id=%s reconciled for user_id=%s by admin user_id=%s",
-            deposit.id, user.id, current_user.id,
-        )
-
-    logger.info("User id=%s processed as left by admin user_id=%s", user.id, current_user.id)
-    return UserResponse.model_validate(user)
+    return AssetBuyinResponse(
+        contribution_id=result.contribution_id,
+        amount=result.amount,
+        fulfilled_refunds=result.fulfilled_refunds,
+    )

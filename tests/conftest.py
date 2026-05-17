@@ -22,7 +22,7 @@ from sqlalchemy.pool import NullPool
 from app.database import Base
 from app.models import *  # noqa: F401,F403 — registers all ORM models
 from app.models.core import Household, Room, RoomAssignment, User
-from app.models.expenses import MealLog, ShoppingEntry, ShoppingItem
+from app.models.expenses import MealLog, ShoppingEntry, ShoppingItem, UtilityBill
 
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
@@ -172,6 +172,31 @@ def make_shopping_entry(db: AsyncSession):
             ))
         await db.flush()
         return entry
+
+    return _make
+
+
+@pytest.fixture
+def make_bill(db: AsyncSession):
+    async def _make(
+        household: Household,
+        paid_by: User,
+        month: str,
+        amount: Decimal,
+        bill_type: str = "electricity",
+    ) -> UtilityBill:
+        year, mo = int(month[:4]), int(month[5:])
+        bill = UtilityBill(
+            household_id=household.id,
+            month=month,
+            type=bill_type,
+            amount=Decimal(str(amount)),
+            paid_by=paid_by.id,
+            paid_at=date(year, mo, 1),
+        )
+        db.add(bill)
+        await db.flush()
+        return bill
 
     return _make
 

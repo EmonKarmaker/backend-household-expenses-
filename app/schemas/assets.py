@@ -45,7 +45,7 @@ class AssetRefundCreate(BaseModel):
     user_id: int
     amount: Decimal
     refunded_at: date
-    paid_by_user: int
+    paid_by_user: int | None = None
     replaced_by_user_id: int | None = None
 
 
@@ -57,7 +57,7 @@ class AssetRefundResponse(BaseModel):
     user_id: int
     amount: MoneyDecimal
     refunded_at: date
-    paid_by_user: int
+    paid_by_user: int | None = None
     replaced_by_user_id: int | None = None
     created_at: datetime
 
@@ -99,3 +99,18 @@ class SharedAssetResponse(BaseModel):
     updated_at: datetime
     contributions: list[AssetContributionResponse] = []
     refunds: list[AssetRefundResponse] = []
+
+
+# ---------------------------------------------------------------------------
+# Buy-in
+# ---------------------------------------------------------------------------
+
+class AssetBuyinRequest(BaseModel):
+    asset_id: int
+    amount: Decimal
+
+
+class AssetBuyinResponse(BaseModel):
+    contribution_id: int
+    amount: MoneyDecimal
+    fulfilled_refunds: list[int]

@@ -140,5 +140,22 @@ class AssignRoomRequest(BaseModel):
 
 class ProcessLeavingRequest(BaseModel):
     leave_date: date
-    deductions: Decimal = Decimal("0")
-    deduction_reason: str | None = None
+
+
+class ProcessLeavingAssetRefund(BaseModel):
+    asset_id: int
+    asset_name: str
+    amount: MoneyDecimal
+    paid_by_user: int | None  # None = pending new-member buy-in
+
+
+class ProcessLeavingResponse(BaseModel):
+    user_id: int
+    left_at: date
+    dues: MoneyDecimal
+    deposit_amount: MoneyDecimal
+    deposit_applied_to_dues: MoneyDecimal
+    deposit_cash_refund: MoneyDecimal
+    remaining_dues: MoneyDecimal
+    asset_refunds: list[ProcessLeavingAssetRefund]
+    total_cash_owed_to_leaver: MoneyDecimal
