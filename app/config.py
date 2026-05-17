@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     currency_code: str = "BDT"
     currency_symbol: str = "৳"
 
+    # Cloudinary — all default to "" so absence triggers local-filesystem fallback
+    cloudinary_cloud_name: str = ""
+    cloudinary_api_key: str = ""
+    cloudinary_api_secret: str = ""
+    cloudinary_upload_folder: str = "household-app"
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
