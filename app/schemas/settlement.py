@@ -5,6 +5,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, PlainSerializer
 
+from app.schemas.core import UserMini
+
 MoneyDecimal = Annotated[Decimal, PlainSerializer(str, return_type=str)]
 
 
@@ -35,12 +37,12 @@ class SettlementResponse(BaseModel):
 
     id: int
     month_id: str
-    from_user: int
-    to_user: int
+    from_user: UserMini
+    to_user: UserMini
     amount: MoneyDecimal
     paid: bool
     paid_at: datetime | None = None
-    paid_marked_by: int | None = None
+    paid_marked_by: UserMini | None = None
     created_at: datetime
 
 
@@ -52,7 +54,7 @@ class MonthCloseResponse(BaseModel):
     month_id: str
     status: str
     closed_at: datetime
-    closed_by: int
+    closed_by: UserMini
     settlements: list[SettlementResponse]
 
 

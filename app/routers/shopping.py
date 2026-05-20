@@ -30,6 +30,7 @@ from app.database import get_db
 from app.models.core import User
 from app.models.expenses import ItemCatalog, ShoppingEntry, ShoppingItem
 from app.models.settlement import Month
+from app.schemas.core import UserMini
 from app.schemas.expenses import (
     ShoppingEntryResponse,
     ShoppingItemCreate,
@@ -78,14 +79,45 @@ async def _get_item_or_404(
     return item, item.entry
 
 
+def _build_item_response(si: ShoppingItem) -> ShoppingItemResponse:
+    return ShoppingItemResponse(
+        id=si.id,
+        entry_id=si.entry_id,
+        name=si.name,
+        price=si.price,
+        quantity=si.quantity,
+        category=si.category,
+        target_user=UserMini(id=si.target_user.id, name=si.target_user.name) if si.target_user else None,
+        line_total=si.line_total,
+        created_at=si.created_at,
+    )
+
+
+def _build_entry_response(e: ShoppingEntry) -> ShoppingEntryResponse:
+    return ShoppingEntryResponse(
+        id=e.id,
+        household_id=e.household_id,
+        month=e.month,
+        paid_by=UserMini(id=e.paid_by_user.id, name=e.paid_by_user.name),
+        photo_url=e.photo_url,
+        note=e.note,
+        items=[_build_item_response(si) for si in e.items],
+        created_at=e.created_at,
+        updated_at=e.updated_at,
+    )
+
+
 async def _load_entry_response(entry_id: int, db: AsyncSession) -> ShoppingEntryResponse:
-    """Re-query a single entry with items eagerly loaded for response building."""
+    """Re-query a single entry with all user relationships eagerly loaded."""
     result = await db.execute(
         select(ShoppingEntry)
         .where(ShoppingEntry.id == entry_id)
-        .options(selectinload(ShoppingEntry.items))
+        .options(
+            selectinload(ShoppingEntry.paid_by_user),
+            selectinload(ShoppingEntry.items).selectinload(ShoppingItem.target_user),
+        )
     )
-    return ShoppingEntryResponse.model_validate(result.scalar_one())
+    return _build_entry_response(result.scalar_one())
 
 
 async def _require_open_month(month: str, household_id: int, db: AsyncSession) -> None:
@@ -208,7 +240,10 @@ async def list_entries(
             ShoppingEntry.household_id == current_user.household_id,
             ShoppingEntry.month == target_month,
         )
-        .options(selectinload(ShoppingEntry.items))
+        .options(
+            selectinload(ShoppingEntry.paid_by_user),
+            selectinload(ShoppingEntry.items).selectinload(ShoppingItem.target_user),
+        )
         .order_by(ShoppingEntry.id)
     )
 
@@ -220,7 +255,7 @@ async def list_entries(
         )
 
     result = await db.execute(stmt)
-    return [ShoppingEntryResponse.model_validate(e) for e in result.scalars().all()]
+    return [_build_entry_response(e) for e in result.scalars().all()]
 
 
 @router.get("/{entry_id}", response_model=ShoppingEntryResponse)
@@ -449,7 +484,8 @@ async def update_item(
 
     updates = body.model_dump(exclude_unset=True)
     if not updates:
-        return ShoppingItemResponse.model_validate(item)
+        await db.refresh(item, ["target_user"])
+        return _build_item_response(item)
 
     # Compute the resulting category + target_user_id to validate the combination
     resulting_category = updates.get("category", item.category)
@@ -488,6 +524,7 @@ async def update_item(
 
     await db.flush()
     await db.refresh(item)
+    await db.refresh(item, ["target_user"])
 
     await log_audit(
         db,
@@ -499,7 +536,7 @@ async def update_item(
         after=model_to_dict(item),
     )
     logger.info("ShoppingItem id=%s updated by user_id=%s", item.id, current_user.id)
-    return ShoppingItemResponse.model_validate(item)
+    return _build_item_response(item)
 
 
 @router.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)

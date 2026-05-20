@@ -77,6 +77,7 @@ class ShoppingEntry(Base):
     items: Mapped[list["ShoppingItem"]] = relationship(
         back_populates="entry", cascade="all, delete-orphan"
     )
+    paid_by_user: Mapped["User"] = relationship(foreign_keys="[ShoppingEntry.paid_by]")
 
 
 class ShoppingItem(Base):
@@ -101,6 +102,7 @@ class ShoppingItem(Base):
     created_at: Mapped[TimestampCreate]
 
     entry: Mapped["ShoppingEntry"] = relationship(back_populates="items")
+    target_user: Mapped["User | None"] = relationship(foreign_keys="[ShoppingItem.target_user_id]")
 
     @property
     def line_total(self) -> Decimal:

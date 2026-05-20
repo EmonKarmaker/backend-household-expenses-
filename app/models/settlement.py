@@ -1,12 +1,15 @@
 """Settlement and month-tracking models."""
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Numeric, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base, TimestampCreate
+
+if TYPE_CHECKING:
+    from app.models.core import User
 
 MonthStatus = Enum("open", "closed", name="month_status")
 
@@ -33,6 +36,8 @@ class Month(Base):
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
     )
     created_at: Mapped[TimestampCreate]
+
+    closed_by_user: Mapped["User | None"] = relationship(foreign_keys="[Month.closed_by]")
 
 
 class Settlement(Base):
@@ -62,6 +67,10 @@ class Settlement(Base):
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
     )
     created_at: Mapped[TimestampCreate]
+
+    from_user_obj: Mapped["User"] = relationship(foreign_keys="[Settlement.from_user]")
+    to_user_obj: Mapped["User"] = relationship(foreign_keys="[Settlement.to_user]")
+    paid_marked_by_user: Mapped["User | None"] = relationship(foreign_keys="[Settlement.paid_marked_by]")
 
 
 class AuditLog(Base):

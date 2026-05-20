@@ -7,11 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.core import User
 from app.models.expenses import MealLog
 from app.models.settlement import Month
+from app.schemas.core import UserMini
 from app.schemas.expenses import MealLogBulkUpsertRequest, MealLogResponse, MealLogUpdate
 from app.utils.audit import log_audit, model_to_dict
 from app.utils.permissions import get_current_user
@@ -86,13 +88,27 @@ async def list_logs(
             MealLog.log_date >= first_day,
             MealLog.log_date <= last_day,
         )
+        .options(selectinload(MealLog.user))
         .order_by(MealLog.log_date, MealLog.user_id)
     )
     if user_id is not None:
         stmt = stmt.where(MealLog.user_id == user_id)
 
     result = await db.execute(stmt)
-    return [MealLogResponse.model_validate(r) for r in result.scalars().all()]
+    return [
+        MealLogResponse(
+            id=r.id,
+            user=UserMini(id=r.user.id, name=r.user.name),
+            log_date=r.log_date,
+            meal_count=r.meal_count,
+            guest_meals=r.guest_meals,
+            total_meals=r.total_meals,
+            note=r.note,
+            created_at=r.created_at,
+            updated_at=r.updated_at,
+        )
+        for r in result.scalars().all()
+    ]
 
 
 @router.get("/me", response_model=list[MealLogResponse])
@@ -113,7 +129,21 @@ async def list_my_logs(
         )
         .order_by(MealLog.log_date)
     )
-    return [MealLogResponse.model_validate(r) for r in result.scalars().all()]
+    owner = UserMini(id=current_user.id, name=current_user.name)
+    return [
+        MealLogResponse(
+            id=r.id,
+            user=owner,
+            log_date=r.log_date,
+            meal_count=r.meal_count,
+            guest_meals=r.guest_meals,
+            total_meals=r.total_meals,
+            note=r.note,
+            created_at=r.created_at,
+            updated_at=r.updated_at,
+        )
+        for r in result.scalars().all()
+    ]
 
 
 @router.post("/bulk", response_model=list[MealLogResponse])
@@ -216,7 +246,20 @@ async def bulk_upsert(
             note="bulk upsert",
         )
     logger.info("MealLog bulk upsert: %d rows by user_id=%s", len(logs), current_user.id)
-    return [MealLogResponse.model_validate(log) for log in logs]
+    return [
+        MealLogResponse(
+            id=log.id,
+            user=UserMini(id=users_by_id[log.user_id].id, name=users_by_id[log.user_id].name),
+            log_date=log.log_date,
+            meal_count=log.meal_count,
+            guest_meals=log.guest_meals,
+            total_meals=log.total_meals,
+            note=log.note,
+            created_at=log.created_at,
+            updated_at=log.updated_at,
+        )
+        for log in logs
+    ]
 
 
 @router.patch("/{log_id}", response_model=MealLogResponse)
@@ -234,7 +277,18 @@ async def update_log(
     # meal_count/guest_meals cannot be null in DB; only note can be cleared to null
     filtered = {k: v for k, v in updates.items() if v is not None or k == "note"}
     if not filtered:
-        return MealLogResponse.model_validate(log)
+        log_user = await db.get(User, log.user_id)
+        return MealLogResponse(
+            id=log.id,
+            user=UserMini(id=log_user.id, name=log_user.name),
+            log_date=log.log_date,
+            meal_count=log.meal_count,
+            guest_meals=log.guest_meals,
+            total_meals=log.total_meals,
+            note=log.note,
+            created_at=log.created_at,
+            updated_at=log.updated_at,
+        )
 
     before = model_to_dict(log)
     for field, value in filtered.items():
@@ -242,6 +296,7 @@ async def update_log(
 
     await db.flush()
     await db.refresh(log)
+    log_user = await db.get(User, log.user_id)
 
     await log_audit(
         db,
@@ -253,7 +308,17 @@ async def update_log(
         after=model_to_dict(log),
     )
     logger.info("MealLog id=%s updated by user_id=%s", log.id, current_user.id)
-    return MealLogResponse.model_validate(log)
+    return MealLogResponse(
+        id=log.id,
+        user=UserMini(id=log_user.id, name=log_user.name),
+        log_date=log.log_date,
+        meal_count=log.meal_count,
+        guest_meals=log.guest_meals,
+        total_meals=log.total_meals,
+        note=log.note,
+        created_at=log.created_at,
+        updated_at=log.updated_at,
+    )
 
 
 @router.delete("/{log_id}", status_code=status.HTTP_204_NO_CONTENT)

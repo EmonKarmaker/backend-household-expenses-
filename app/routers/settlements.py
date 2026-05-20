@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.core import User
+from app.schemas.core import UserMini
 from app.schemas.settlement import MarkSettlementPaidRequest, SettlementResponse
 from app.services.settlement_mark import MonthIsOpen, SettlementNotFound, mark_settlement_paid
 from app.utils.permissions import require_admin
@@ -34,4 +35,17 @@ async def mark_settlement(
             detail="Cannot mark settlement paid in an open month",
         )
 
-    return SettlementResponse.model_validate(settlement)
+    from_u = await db.get(User, settlement.from_user)
+    to_u = await db.get(User, settlement.to_user)
+    marked_u = await db.get(User, settlement.paid_marked_by) if settlement.paid_marked_by else None
+    return SettlementResponse(
+        id=settlement.id,
+        month_id=settlement.month_id,
+        from_user=UserMini(id=from_u.id, name=from_u.name),
+        to_user=UserMini(id=to_u.id, name=to_u.name),
+        amount=settlement.amount,
+        paid=settlement.paid,
+        paid_at=settlement.paid_at,
+        paid_marked_by=UserMini(id=marked_u.id, name=marked_u.name) if marked_u else None,
+        created_at=settlement.created_at,
+    )

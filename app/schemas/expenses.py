@@ -81,7 +81,7 @@ class ShoppingItemResponse(BaseModel):
     price: MoneyDecimal
     quantity: MoneyDecimal
     category: str
-    target_user_id: int | None = None
+    target_user: UserMini | None = None
     line_total: MoneyDecimal  # computed @property on the ORM model
     created_at: datetime
 
@@ -107,7 +107,7 @@ class ShoppingEntryResponse(BaseModel):
     id: int
     household_id: int
     month: str
-    paid_by: int
+    paid_by: UserMini
     photo_url: str | None = None
     note: str | None = None
     items: list[ShoppingItemResponse] = []
@@ -157,7 +157,7 @@ class MealLogResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True, json_encoders={Decimal: str})
 
     id: int
-    user_id: int
+    user: UserMini
     log_date: date
     meal_count: MoneyDecimal
     guest_meals: MoneyDecimal
