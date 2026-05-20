@@ -5,6 +5,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
 
+from app.schemas.core import UserMini
+
 MoneyDecimal = Annotated[Decimal, PlainSerializer(str, return_type=str)]
 MonthStr = Annotated[str, Field(pattern=r"^\d{4}-\d{2}$")]
 BillTypeStr = Annotated[str, Field(min_length=1, max_length=50)]
@@ -38,7 +40,7 @@ class UtilityBillResponse(BaseModel):
     month: str
     type: str
     amount: MoneyDecimal
-    paid_by: int
+    paid_by: UserMini
     paid_at: date
     photo_url: str | None = None
     note: str | None = None

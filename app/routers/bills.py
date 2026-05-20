@@ -5,11 +5,13 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.expenses import UtilityBill
 from app.models.settlement import Month
 from app.models.core import User
+from app.schemas.core import UserMini
 from app.schemas.expenses import BillTypesResponse, UtilityBillResponse, UtilityBillUpdate
 from app.services.storage import save_receipt_photo
 from app.utils.audit import log_audit, model_to_dict
@@ -68,13 +70,29 @@ async def list_bills(
     target_month = month or _current_month()
     result = await db.execute(
         select(UtilityBill)
+        .options(selectinload(UtilityBill.paid_by_user))
         .where(
             UtilityBill.household_id == current_user.household_id,
             UtilityBill.month == target_month,
         )
         .order_by(UtilityBill.paid_at, UtilityBill.id)
     )
-    return [UtilityBillResponse.model_validate(b) for b in result.scalars().all()]
+    return [
+        UtilityBillResponse(
+            id=b.id,
+            household_id=b.household_id,
+            month=b.month,
+            type=b.type,
+            amount=b.amount,
+            paid_by=UserMini(id=b.paid_by_user.id, name=b.paid_by_user.name),
+            paid_at=b.paid_at,
+            photo_url=b.photo_url,
+            note=b.note,
+            created_at=b.created_at,
+            updated_at=b.updated_at,
+        )
+        for b in result.scalars().all()
+    ]
 
 
 @router.get("/types", response_model=BillTypesResponse)
@@ -99,7 +117,20 @@ async def get_bill(
     db: AsyncSession = Depends(get_db),
 ) -> UtilityBillResponse:
     bill = await _get_bill_or_404(bill_id, current_user.household_id, db)
-    return UtilityBillResponse.model_validate(bill)
+    payer = await db.get(User, bill.paid_by)
+    return UtilityBillResponse(
+        id=bill.id,
+        household_id=bill.household_id,
+        month=bill.month,
+        type=bill.type,
+        amount=bill.amount,
+        paid_by=UserMini(id=payer.id, name=payer.name),
+        paid_at=bill.paid_at,
+        photo_url=bill.photo_url,
+        note=bill.note,
+        created_at=bill.created_at,
+        updated_at=bill.updated_at,
+    )
 
 
 @router.post("", response_model=UtilityBillResponse, status_code=status.HTTP_201_CREATED)
@@ -153,7 +184,19 @@ async def create_bill(
         after=model_to_dict(bill),
     )
     logger.info("UtilityBill id=%s created by user_id=%s", bill.id, current_user.id)
-    return UtilityBillResponse.model_validate(bill)
+    return UtilityBillResponse(
+        id=bill.id,
+        household_id=bill.household_id,
+        month=bill.month,
+        type=bill.type,
+        amount=bill.amount,
+        paid_by=UserMini(id=current_user.id, name=current_user.name),
+        paid_at=bill.paid_at,
+        photo_url=bill.photo_url,
+        note=bill.note,
+        created_at=bill.created_at,
+        updated_at=bill.updated_at,
+    )
 
 
 @router.patch("/{bill_id}", response_model=UtilityBillResponse)
@@ -170,7 +213,20 @@ async def update_bill(
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
 
     if not updates:
-        return UtilityBillResponse.model_validate(bill)
+        payer = await db.get(User, bill.paid_by)
+        return UtilityBillResponse(
+            id=bill.id,
+            household_id=bill.household_id,
+            month=bill.month,
+            type=bill.type,
+            amount=bill.amount,
+            paid_by=UserMini(id=payer.id, name=payer.name),
+            paid_at=bill.paid_at,
+            photo_url=bill.photo_url,
+            note=bill.note,
+            created_at=bill.created_at,
+            updated_at=bill.updated_at,
+        )
 
     # If the month is being changed, the new month must also be open
     if "month" in updates and updates["month"] != bill.month:
@@ -181,6 +237,7 @@ async def update_bill(
 
     await db.flush()
     await db.refresh(bill)
+    payer = await db.get(User, bill.paid_by)
 
     await log_audit(
         db,
@@ -192,7 +249,19 @@ async def update_bill(
         after=model_to_dict(bill),
     )
     logger.info("UtilityBill id=%s updated by user_id=%s", bill.id, current_user.id)
-    return UtilityBillResponse.model_validate(bill)
+    return UtilityBillResponse(
+        id=bill.id,
+        household_id=bill.household_id,
+        month=bill.month,
+        type=bill.type,
+        amount=bill.amount,
+        paid_by=UserMini(id=payer.id, name=payer.name),
+        paid_at=bill.paid_at,
+        photo_url=bill.photo_url,
+        note=bill.note,
+        created_at=bill.created_at,
+        updated_at=bill.updated_at,
+    )
 
 
 @router.delete("/{bill_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -61,6 +61,17 @@ class RoomResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# UserMini  — minimal user reference for embedding in response schemas
+# ---------------------------------------------------------------------------
+
+class UserMini(BaseModel):
+    """Minimal user reference for embedding in other response schemas."""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+
+
+# ---------------------------------------------------------------------------
 # User  — password_hash is NEVER included in any response schema
 # ---------------------------------------------------------------------------
 

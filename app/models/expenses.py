@@ -50,6 +50,8 @@ class UtilityBill(Base):
     created_at: Mapped[TimestampCreate]
     updated_at: Mapped[TimestampUpdate]
 
+    paid_by_user: Mapped["User"] = relationship(foreign_keys="[UtilityBill.paid_by]")
+
 
 class ShoppingEntry(Base):
     """A single shopping trip (one receipt).
