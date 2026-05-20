@@ -23,15 +23,6 @@ if TYPE_CHECKING:
 
 # --- Enums (stored as strings in Postgres for readability) ---
 
-UtilityType = Enum(
-    "electricity",
-    "internet",
-    "gas",
-    "water",
-    "other",
-    name="utility_type",
-)
-
 ItemCategory = Enum(
     "meal",
     "household",
@@ -48,7 +39,7 @@ class UtilityBill(Base):
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False
     )
     month: Mapped[str] = mapped_column(String(7), nullable=False)  # "YYYY-MM"
-    type: Mapped[str] = mapped_column(UtilityType, nullable=False)
+    type: Mapped[str] = mapped_column(String(50), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     paid_by: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=False

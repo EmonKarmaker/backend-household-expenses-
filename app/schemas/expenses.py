@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
 
 MoneyDecimal = Annotated[Decimal, PlainSerializer(str, return_type=str)]
 MonthStr = Annotated[str, Field(pattern=r"^\d{4}-\d{2}$")]
+BillTypeStr = Annotated[str, Field(min_length=1, max_length=50)]
 
 
 # ---------------------------------------------------------------------------
@@ -15,7 +16,7 @@ MonthStr = Annotated[str, Field(pattern=r"^\d{4}-\d{2}$")]
 
 class UtilityBillCreate(BaseModel):
     month: MonthStr
-    type: Literal["electricity", "internet", "gas", "water", "other"]
+    type: BillTypeStr
     amount: Decimal
     paid_at: date
     note: str | None = None
@@ -23,7 +24,7 @@ class UtilityBillCreate(BaseModel):
 
 class UtilityBillUpdate(BaseModel):
     month: MonthStr | None = None
-    type: Literal["electricity", "internet", "gas", "water", "other"] | None = None
+    type: BillTypeStr | None = None
     amount: Decimal | None = None
     paid_at: date | None = None
     note: str | None = None
@@ -43,6 +44,10 @@ class UtilityBillResponse(BaseModel):
     note: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class BillTypesResponse(BaseModel):
+    types: list[str]
 
 
 # ---------------------------------------------------------------------------

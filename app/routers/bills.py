@@ -10,7 +10,7 @@ from app.database import get_db
 from app.models.expenses import UtilityBill
 from app.models.settlement import Month
 from app.models.core import User
-from app.schemas.expenses import UtilityBillResponse, UtilityBillUpdate
+from app.schemas.expenses import BillTypesResponse, UtilityBillResponse, UtilityBillUpdate
 from app.services.storage import save_receipt_photo
 from app.utils.audit import log_audit, model_to_dict
 from app.utils.permissions import get_current_user, require_admin
@@ -18,9 +18,7 @@ from app.utils.permissions import get_current_user, require_admin
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-_VALID_TYPES: frozenset[str] = frozenset(
-    {"electricity", "internet", "gas", "water", "other"}
-)
+DEFAULT_BILL_TYPES: list[str] = ["electricity", "internet", "gas", "water", "other"]
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +77,21 @@ async def list_bills(
     return [UtilityBillResponse.model_validate(b) for b in result.scalars().all()]
 
 
+@router.get("/types", response_model=BillTypesResponse)
+async def list_bill_types(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> BillTypesResponse:
+    result = await db.execute(
+        select(UtilityBill.type)
+        .distinct()
+        .where(UtilityBill.household_id == current_user.household_id)
+    )
+    db_types = set(result.scalars().all())
+    merged = sorted(set(DEFAULT_BILL_TYPES) | db_types)
+    return BillTypesResponse(types=merged)
+
+
 @router.get("/{bill_id}", response_model=UtilityBillResponse)
 async def get_bill(
     bill_id: int,
@@ -100,10 +113,17 @@ async def create_bill(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> UtilityBillResponse:
-    if type not in _VALID_TYPES:
+    # Form params bypass the Pydantic body schema, so validate manually.
+    type = type.strip().lower()
+    if not type:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"type must be one of: {', '.join(sorted(_VALID_TYPES))}",
+            detail="type must not be blank",
+        )
+    if len(type) > 50:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="type must be at most 50 characters",
         )
 
     await _require_open_month(month, current_user.household_id, db)
