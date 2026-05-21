@@ -5,6 +5,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, PlainSerializer
 
+from app.schemas.core import UserMini
+
 MoneyDecimal = Annotated[Decimal, PlainSerializer(str, return_type=str)]
 
 
@@ -30,7 +32,7 @@ class AssetContributionResponse(BaseModel):
 
     id: int
     asset_id: int
-    user_id: int
+    user: UserMini
     amount: MoneyDecimal
     contributed_at: date
     contribution_type: str
@@ -54,11 +56,11 @@ class AssetRefundResponse(BaseModel):
 
     id: int
     asset_id: int
-    user_id: int
+    user: UserMini
     amount: MoneyDecimal
     refunded_at: date
-    paid_by_user: int | None = None
-    replaced_by_user_id: int | None = None
+    paid_by_user: UserMini | None = None
+    replaced_by_user: UserMini | None = None
     created_at: datetime
 
 
@@ -94,7 +96,7 @@ class SharedAssetResponse(BaseModel):
     total_cost: MoneyDecimal
     requires_buyin_from_new_members: bool
     status: str
-    bought_by_user_id: int
+    bought_by_user: UserMini
     created_at: datetime
     updated_at: datetime
     contributions: list[AssetContributionResponse] = []

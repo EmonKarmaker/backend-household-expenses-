@@ -117,7 +117,7 @@ class RoomAssignmentResponse(BaseModel):
 
     id: int
     room_id: int
-    user_id: int
+    user: UserMini
     effective_month: str
     created_at: datetime
 
@@ -157,7 +157,7 @@ class ProcessLeavingAssetRefund(BaseModel):
     asset_id: int
     asset_name: str
     amount: MoneyDecimal
-    paid_by_user: int | None  # None = pending new-member buy-in
+    paid_by_user: UserMini | None  # None = pending new-member buy-in
 
 
 class ProcessLeavingResponse(BaseModel):

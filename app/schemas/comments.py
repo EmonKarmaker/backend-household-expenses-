@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.core import UserMini
+
 
 class CommentCreate(BaseModel):
     entry_type: Literal["shopping", "bill", "asset"]
@@ -25,6 +27,6 @@ class CommentResponse(BaseModel):
     id: int
     entry_type: str
     entry_id: int
-    user_id: int
+    user: UserMini
     body: str
     created_at: datetime

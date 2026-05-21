@@ -5,6 +5,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, PlainSerializer
 
+from app.schemas.core import UserMini
+
 MoneyDecimal = Annotated[Decimal, PlainSerializer(str, return_type=str)]
 
 
@@ -40,10 +42,10 @@ class SecurityDepositResponseFull(BaseModel):
     model_config = ConfigDict(from_attributes=True, json_encoders={Decimal: str})
 
     id: int
-    user_id: int
+    user: UserMini
     amount: MoneyDecimal
     deposited_at: date
-    held_by_user_id: int
+    held_by_user: UserMini
     status: str
     refunded_at: date | None = None
     deduction_reason: str | None = None

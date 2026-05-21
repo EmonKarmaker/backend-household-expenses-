@@ -4,6 +4,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.assets import SharedAsset
@@ -11,6 +12,7 @@ from app.models.comments import Comment
 from app.models.core import User
 from app.models.expenses import ShoppingEntry, UtilityBill
 from app.schemas.comments import CommentCreate, CommentResponse
+from app.schemas.core import UserMini
 from app.utils.audit import log_audit, model_to_dict
 from app.utils.permissions import get_current_user
 
@@ -91,9 +93,20 @@ async def list_comments(
     result = await db.execute(
         select(Comment)
         .where(Comment.entry_type == entry_type, Comment.entry_id == entry_id)
+        .options(selectinload(Comment.user))
         .order_by(Comment.created_at, Comment.id)
     )
-    return [CommentResponse.model_validate(c) for c in result.scalars().all()]
+    return [
+        CommentResponse(
+            id=c.id,
+            entry_type=c.entry_type,
+            entry_id=c.entry_id,
+            user=UserMini(id=c.user.id, name=c.user.name),
+            body=c.body,
+            created_at=c.created_at,
+        )
+        for c in result.scalars().all()
+    ]
 
 
 @router.post("", response_model=CommentResponse, status_code=status.HTTP_201_CREATED)
@@ -123,7 +136,14 @@ async def create_comment(
         after=model_to_dict(comment),
     )
     logger.info("Comment id=%s created by user_id=%s", comment.id, current_user.id)
-    return CommentResponse.model_validate(comment)
+    return CommentResponse(
+        id=comment.id,
+        entry_type=comment.entry_type,
+        entry_id=comment.entry_id,
+        user=UserMini(id=current_user.id, name=current_user.name),
+        body=comment.body,
+        created_at=comment.created_at,
+    )
 
 
 @router.delete("/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)

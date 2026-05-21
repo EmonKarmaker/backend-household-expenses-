@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.core import User
+from app.schemas.core import UserMini
 from app.schemas.deposits import (
     SecurityDepositCreate,
     SecurityDepositResponseFull,
@@ -24,7 +25,24 @@ router = APIRouter()
 
 def _format(deposits, is_admin: bool) -> list:
     if is_admin:
-        return [SecurityDepositResponseFull.model_validate(d) for d in deposits]
+        return [
+            SecurityDepositResponseFull(
+                id=d.id,
+                user=UserMini(id=d.user.id, name=d.user.name),
+                amount=d.amount,
+                deposited_at=d.deposited_at,
+                held_by_user=UserMini(id=d.held_by_user.id, name=d.held_by_user.name),
+                status=d.status,
+                refunded_at=d.refunded_at,
+                deduction_reason=d.deduction_reason,
+                deduction_amount=d.deduction_amount,
+                applied_to_dues=d.applied_to_dues,
+                final_refund=d.final_refund,
+                created_at=d.created_at,
+                updated_at=d.updated_at,
+            )
+            for d in deposits
+        ]
     return [SecurityDepositResponsePublic.model_validate(d) for d in deposits]
 
 
@@ -83,4 +101,19 @@ async def create_deposit(
             status_code=status.HTTP_409_CONFLICT,
             detail="User already has an active deposit; refund it first",
         )
-    return SecurityDepositResponseFull.model_validate(deposit)
+    target_user = await db.get(User, body.user_id)
+    return SecurityDepositResponseFull(
+        id=deposit.id,
+        user=UserMini(id=target_user.id, name=target_user.name),
+        amount=deposit.amount,
+        deposited_at=deposit.deposited_at,
+        held_by_user=UserMini(id=current_user.id, name=current_user.name),
+        status=deposit.status,
+        refunded_at=deposit.refunded_at,
+        deduction_reason=deposit.deduction_reason,
+        deduction_amount=deposit.deduction_amount,
+        applied_to_dues=deposit.applied_to_dues,
+        final_refund=deposit.final_refund,
+        created_at=deposit.created_at,
+        updated_at=deposit.updated_at,
+    )

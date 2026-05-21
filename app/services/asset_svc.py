@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.assets import AssetContribution, SharedAsset
+from app.models.assets import AssetContribution, AssetRefund, SharedAsset
 from app.models.core import User
 from app.schemas.assets import AssetContributionInput, SharedAssetUpdate
 from app.utils.audit import log_audit, model_to_dict
@@ -54,8 +54,11 @@ async def get_asset_or_404(
             SharedAsset.household_id == household_id,
         )
         .options(
-            selectinload(SharedAsset.contributions),
-            selectinload(SharedAsset.refunds),
+            selectinload(SharedAsset.bought_by_user),
+            selectinload(SharedAsset.contributions).selectinload(AssetContribution.user),
+            selectinload(SharedAsset.refunds).selectinload(AssetRefund.user_obj),
+            selectinload(SharedAsset.refunds).selectinload(AssetRefund.paid_by_user_obj),
+            selectinload(SharedAsset.refunds).selectinload(AssetRefund.replaced_by_user_obj),
         )
     )
     asset = result.scalar_one_or_none()

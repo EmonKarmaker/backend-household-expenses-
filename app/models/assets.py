@@ -1,6 +1,7 @@
 """Shared asset models: durable purchases like fans, cookers, furniture."""
 from datetime import date, datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
@@ -15,6 +16,9 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base, TimestampCreate, TimestampUpdate
+
+if TYPE_CHECKING:
+    from app.models.core import User
 
 AssetStatus = Enum("active", "disposed", name="asset_status")
 
@@ -57,6 +61,7 @@ class SharedAsset(Base):
     refunds: Mapped[list["AssetRefund"]] = relationship(
         back_populates="asset", cascade="all, delete-orphan"
     )
+    bought_by_user: Mapped["User"] = relationship(foreign_keys="[SharedAsset.bought_by_user_id]")
 
 
 class AssetContribution(Base):
@@ -77,6 +82,7 @@ class AssetContribution(Base):
     created_at: Mapped[TimestampCreate]
 
     asset: Mapped["SharedAsset"] = relationship(back_populates="contributions")
+    user: Mapped["User"] = relationship(foreign_keys="[AssetContribution.user_id]")
 
 
 class AssetRefund(Base):
@@ -106,3 +112,6 @@ class AssetRefund(Base):
     created_at: Mapped[TimestampCreate]
 
     asset: Mapped["SharedAsset"] = relationship(back_populates="refunds")
+    user_obj: Mapped["User"] = relationship(foreign_keys="[AssetRefund.user_id]")
+    paid_by_user_obj: Mapped["User | None"] = relationship(foreign_keys="[AssetRefund.paid_by_user]")
+    replaced_by_user_obj: Mapped["User | None"] = relationship(foreign_keys="[AssetRefund.replaced_by_user_id]")

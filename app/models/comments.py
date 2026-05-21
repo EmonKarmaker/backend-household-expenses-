@@ -1,10 +1,14 @@
 """Comments on expenses, bills, and assets for transparency."""
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Enum, ForeignKey, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base, TimestampCreate
+
+if TYPE_CHECKING:
+    from app.models.core import User
 
 CommentEntryType = Enum("shopping", "bill", "asset", name="comment_entry_type")
 
@@ -26,3 +30,5 @@ class Comment(Base):
     )
     body: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[TimestampCreate]
+
+    user: Mapped["User"] = relationship(foreign_keys="[Comment.user_id]")

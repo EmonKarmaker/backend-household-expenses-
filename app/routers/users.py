@@ -22,6 +22,7 @@ from app.schemas.core import (
     ProcessLeavingRequest,
     ProcessLeavingResponse,
     RoomAssignmentResponse,
+    UserMini,
     UserPatchRequest,
     UserResponse,
 )
@@ -266,6 +267,7 @@ async def assign_room(
         )
 
     await db.refresh(assignment)
+    assigned_user = await db.get(User, assignment.user_id)
 
     await log_audit(
         db,
@@ -279,7 +281,13 @@ async def assign_room(
         "RoomAssignment id=%s created for user_id=%s by admin user_id=%s",
         assignment.id, user_id, current_user.id,
     )
-    return RoomAssignmentResponse.model_validate(assignment)
+    return RoomAssignmentResponse(
+        id=assignment.id,
+        room_id=assignment.room_id,
+        user=UserMini(id=assigned_user.id, name=assigned_user.name),
+        effective_month=assignment.effective_month,
+        created_at=assignment.created_at,
+    )
 
 
 @router.post("/{user_id}/transfer-admin", response_model=UserResponse)
@@ -375,6 +383,7 @@ async def process_leaving(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     logger.info("User id=%s processed as left by admin user_id=%s", user_id, current_user.id)
+    admin_mini = UserMini(id=current_user.id, name=current_user.name)
     return ProcessLeavingResponse(
         user_id=result.user_id,
         left_at=result.left_at,
@@ -388,7 +397,7 @@ async def process_leaving(
                 asset_id=r.asset_id,
                 asset_name=r.asset_name,
                 amount=r.amount,
-                paid_by_user=r.paid_by_user,
+                paid_by_user=admin_mini if r.paid_by_user is not None else None,
             )
             for r in result.asset_refunds
         ],

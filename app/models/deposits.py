@@ -49,3 +49,6 @@ class SecurityDeposit(Base):
     user: Mapped["User"] = relationship(  # type: ignore[name-defined]  # noqa: F821
         foreign_keys=[user_id], back_populates="deposits"
     )
+    held_by_user: Mapped["User"] = relationship(  # type: ignore[name-defined]  # noqa: F821
+        foreign_keys=[held_by_user_id]
+    )

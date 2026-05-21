@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.core import User
 from app.models.deposits import SecurityDeposit
@@ -33,11 +34,18 @@ class DepositAlreadyExists(Exception):
 # Query helpers
 # ---------------------------------------------------------------------------
 
+_DEPOSIT_USER_LOADS = [
+    selectinload(SecurityDeposit.user),
+    selectinload(SecurityDeposit.held_by_user),
+]
+
+
 async def list_deposits_svc(household_id: int, db: AsyncSession) -> list[SecurityDeposit]:
     result = await db.execute(
         select(SecurityDeposit)
         .join(User, SecurityDeposit.user_id == User.id)
         .where(User.household_id == household_id)
+        .options(*_DEPOSIT_USER_LOADS)
         .order_by(SecurityDeposit.id.desc())
     )
     return list(result.scalars().all())
@@ -57,6 +65,7 @@ async def get_user_deposits_svc(
     result = await db.execute(
         select(SecurityDeposit)
         .where(SecurityDeposit.user_id == target_user_id)
+        .options(*_DEPOSIT_USER_LOADS)
         .order_by(SecurityDeposit.id.desc())
     )
     return list(result.scalars().all())
