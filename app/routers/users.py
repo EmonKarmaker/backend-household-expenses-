@@ -383,9 +383,10 @@ async def process_leaving(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     logger.info("User id=%s processed as left by admin user_id=%s", user_id, current_user.id)
+    leaving_user = await db.get(User, result.user_id)
     admin_mini = UserMini(id=current_user.id, name=current_user.name)
     return ProcessLeavingResponse(
-        user_id=result.user_id,
+        user=UserMini(id=leaving_user.id, name=leaving_user.name),
         left_at=result.left_at,
         dues=result.dues,
         deposit_amount=result.deposit_amount,

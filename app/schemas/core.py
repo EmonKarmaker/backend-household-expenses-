@@ -161,7 +161,7 @@ class ProcessLeavingAssetRefund(BaseModel):
 
 
 class ProcessLeavingResponse(BaseModel):
-    user_id: int
+    user: UserMini
     left_at: date
     dues: MoneyDecimal
     deposit_amount: MoneyDecimal
