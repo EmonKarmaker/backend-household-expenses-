@@ -45,7 +45,7 @@ class SecurityDepositResponseFull(BaseModel):
     user: UserMini
     amount: MoneyDecimal
     deposited_at: date
-    held_by_user: UserMini
+    held_by: UserMini
     status: str
     refunded_at: date | None = None
     deduction_reason: str | None = None

@@ -63,8 +63,8 @@ def _build_refund_response(r) -> AssetRefundResponse:
         user=UserMini(id=r.user_obj.id, name=r.user_obj.name),
         amount=r.amount,
         refunded_at=r.refunded_at,
-        paid_by_user=UserMini(id=r.paid_by_user_obj.id, name=r.paid_by_user_obj.name) if r.paid_by_user_obj else None,
-        replaced_by_user=UserMini(id=r.replaced_by_user_obj.id, name=r.replaced_by_user_obj.name) if r.replaced_by_user_obj else None,
+        paid_by=UserMini(id=r.paid_by_user_obj.id, name=r.paid_by_user_obj.name) if r.paid_by_user_obj else None,
+        replaced_by=UserMini(id=r.replaced_by_user_obj.id, name=r.replaced_by_user_obj.name) if r.replaced_by_user_obj else None,
         created_at=r.created_at,
     )
 
@@ -80,7 +80,7 @@ def _build_asset_response(a: SharedAsset) -> SharedAssetResponse:
         total_cost=a.total_cost,
         requires_buyin_from_new_members=a.requires_buyin_from_new_members,
         status=a.status,
-        bought_by_user=UserMini(id=a.bought_by_user.id, name=a.bought_by_user.name),
+        bought_by=UserMini(id=a.bought_by_user.id, name=a.bought_by_user.name),
         created_at=a.created_at,
         updated_at=a.updated_at,
         contributions=[_build_contribution_response(c) for c in a.contributions],

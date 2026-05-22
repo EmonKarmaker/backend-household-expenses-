@@ -397,7 +397,7 @@ async def process_leaving(
                 asset_id=r.asset_id,
                 asset_name=r.asset_name,
                 amount=r.amount,
-                paid_by_user=admin_mini if r.paid_by_user is not None else None,
+                paid_by=admin_mini if r.paid_by_user is not None else None,
             )
             for r in result.asset_refunds
         ],

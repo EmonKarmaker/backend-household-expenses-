@@ -111,7 +111,7 @@ async def test_post_left_user_raises(db, household, make_room, make_user):
 # ---------------------------------------------------------------------------
 
 async def test_get_deposits_as_admin_returns_full(db, household, make_room, make_user):
-    """Admin GET /deposits sees held_by_user_id and deduction fields."""
+    """Admin GET /deposits sees held_by (nested UserMini) and deduction fields."""
     from httpx import ASGITransport, AsyncClient
 
     from app.database import get_db
@@ -140,7 +140,8 @@ async def test_get_deposits_as_admin_returns_full(db, household, make_room, make
         data = resp.json()
         assert len(data) == 1
         row = data[0]
-        assert "held_by_user_id" in row
+        assert "held_by" in row
+        assert row["held_by"]["id"] == admin.id
         assert "deduction_amount" in row
         assert "applied_to_dues" in row
         assert "final_refund" in row

@@ -157,7 +157,7 @@ class ProcessLeavingAssetRefund(BaseModel):
     asset_id: int
     asset_name: str
     amount: MoneyDecimal
-    paid_by_user: UserMini | None  # None = pending new-member buy-in
+    paid_by: UserMini | None  # None = pending new-member buy-in
 
 
 class ProcessLeavingResponse(BaseModel):

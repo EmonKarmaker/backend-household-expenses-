@@ -59,8 +59,8 @@ class AssetRefundResponse(BaseModel):
     user: UserMini
     amount: MoneyDecimal
     refunded_at: date
-    paid_by_user: UserMini | None = None
-    replaced_by_user: UserMini | None = None
+    paid_by: UserMini | None = None
+    replaced_by: UserMini | None = None
     created_at: datetime
 
 
@@ -96,7 +96,7 @@ class SharedAssetResponse(BaseModel):
     total_cost: MoneyDecimal
     requires_buyin_from_new_members: bool
     status: str
-    bought_by_user: UserMini
+    bought_by: UserMini
     created_at: datetime
     updated_at: datetime
     contributions: list[AssetContributionResponse] = []
