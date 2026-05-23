@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.core import Room, RoomAssignment, User
 from app.models.expenses import MealLog, ShoppingEntry, ShoppingItem, UtilityBill
+from app.models.settlement import Month
 
 CENT     = Decimal("0.01")
 ZERO     = Decimal("0")
@@ -57,6 +58,7 @@ class MonthSummary(BaseModel):
 
     month_id: str
     household_id: int
+    status: str  # "open" or "closed"
     meal_pool: MoneyDecimal
     total_meals: MoneyDecimal
     cost_per_meal: MoneyDecimal
@@ -115,6 +117,18 @@ async def calculate_month(
     first_day, last_day = _month_range(month_id)
 
     # ------------------------------------------------------------------
+    # 0. Month status — "closed" only when a Month row exists with that value;
+    #    no row (month never closed) or row with status="open" → "open".
+    # ------------------------------------------------------------------
+    month_row = await db.scalar(
+        select(Month).where(
+            Month.id == month_id,
+            Month.household_id == household_id,
+        )
+    )
+    month_status = "closed" if month_row is not None and month_row.status == "closed" else "open"
+
+    # ------------------------------------------------------------------
     # 1. Active users
     #    joined_at <= last_day  AND  (left_at IS NULL OR left_at >= first_day)
     # ------------------------------------------------------------------
@@ -133,6 +147,7 @@ async def calculate_month(
         return MonthSummary(
             month_id=month_id,
             household_id=household_id,
+            status=month_status,
             meal_pool=ZERO,
             total_meals=ZERO,
             cost_per_meal=ZERO,
@@ -335,6 +350,7 @@ async def calculate_month(
     return MonthSummary(
         month_id=month_id,
         household_id=household_id,
+        status=month_status,
         meal_pool=meal_pool.quantize(CENT),
         total_meals=total_meals,
         cost_per_meal=cost_per_meal,

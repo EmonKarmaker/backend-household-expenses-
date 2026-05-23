@@ -9,6 +9,7 @@ import pytest
 
 from app.models.core import Household, Room, User
 from app.services.calculation import MonthSummary, calculate_month
+from app.services.month_close import close_month
 
 MONTH = "2026-05"
 
@@ -47,6 +48,7 @@ async def test_basic_meal_split(
 
     summary = await calculate_month(MONTH, household.id, db)
 
+    assert summary.status == "open"
     assert summary.meal_pool  == Decimal("9000.00")
     assert summary.total_meals == Decimal("115")
 
@@ -423,3 +425,28 @@ async def test_settlement_balance_feeds_minimize_transfers(
         result[t.to_user_id]   -= t.amount
     for bal in result.values():
         assert bal == Decimal("0.00")
+
+
+# ---------------------------------------------------------------------------
+# Test 11 — summary status reflects open/closed Month row
+# ---------------------------------------------------------------------------
+
+async def test_summary_status_open_and_closed(
+    db, household, make_room, make_user, make_bill, make_shopping_entry, make_meal_log
+):
+    """status == 'open' before close, 'closed' after close."""
+    room = await make_room(household, rent=Decimal("0"), service=Decimal("0"))
+    user_a = await make_user(household, room, name="Alice", month=MONTH)
+    user_b = await make_user(household, room, name="Bob",   month=MONTH)
+
+    await make_bill(household, user_a, MONTH, Decimal("1000"), "electricity")
+    await make_meal_log(user_a, date(2026, 5, 1), meal_count=10)
+    await make_meal_log(user_b, date(2026, 5, 1), meal_count=10)
+
+    open_summary = await calculate_month(MONTH, household.id, db)
+    assert open_summary.status == "open"
+
+    await close_month(MONTH, household.id, user_a.id, db)
+
+    closed_summary = await calculate_month(MONTH, household.id, db)
+    assert closed_summary.status == "closed"
