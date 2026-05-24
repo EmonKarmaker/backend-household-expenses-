@@ -80,7 +80,7 @@ async def _send_reset_email_bg(to: str, reset_link: str) -> None:
     try:
         await send_password_reset_email(to=to, reset_link=reset_link)
     except Exception:
-        logger.error("Password reset email failed to deliver to %s", to)
+        logger.exception("Password reset email failed to deliver to %s", to)
 
 
 # ---------------------------------------------------------------------------
