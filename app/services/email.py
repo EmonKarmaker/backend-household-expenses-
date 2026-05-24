@@ -17,6 +17,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from html import escape
 
+import httpx
 import resend
 
 from app.config import get_settings
@@ -181,7 +182,7 @@ async def send_invite_email(
 
 
 async def send_password_reset_email(to: str, reset_link: str) -> None:
-    """Send a password-reset link via Gmail SMTP.
+    """Send a password-reset link via Brevo HTTP API.
 
     reset_link already contains the raw token embedded by the caller.
     The link is included in the email body (that is its purpose) and is
@@ -220,14 +221,48 @@ async def send_password_reset_email(to: str, reset_link: str) -> None:
         f"This link expires in {expiry} {unit}.\n"
         f"If you did not request a reset, ignore this email."
     )
+
+    payload = {
+        "sender": {
+            "email": settings.brevo_sender_email,
+            "name": settings.brevo_sender_name,
+        },
+        "to": [{"email": to}],
+        "subject": "Reset your HomieGhor password",
+        "htmlContent": html,
+        "textContent": text,
+    }
+    headers = {
+        "api-key": settings.brevo_api_key,
+        "accept": "application/json",
+        "content-type": "application/json",
+    }
+
+    logger.info("brevo: sending password reset to %s via Brevo HTTP API", to)
     try:
-        await send_email(
-            to=to,
-            subject="Reset your HomieGhor password",
-            html_body=html,
-            text_body=text,
-        )
-    except RuntimeError:
-        logger.error("Password reset email failed to deliver to %s", to)
-        raise
-    logger.info("Password reset email sent to %s", to)
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                "https://api.brevo.com/v3/smtp/email",
+                json=payload,
+                headers=headers,
+            )
+    except httpx.HTTPError as exc:
+        logger.error("brevo: HTTP transport error sending to %s: %s", to, exc)
+        raise RuntimeError(f"Failed to send email to {to}") from exc
+
+    if resp.status_code >= 400:
+        # Brevo returns JSON error details; log the status + body but NEVER the api-key.
+        # The api-key is in the request headers we just sent, not in the response, so the
+        # response body is safe to log.
+        try:
+            err_body = resp.json()
+        except Exception:
+            err_body = resp.text[:500]
+        logger.error("brevo: send to %s failed with status %s: %s", to, resp.status_code, err_body)
+        raise RuntimeError(f"Failed to send email to {to}")
+
+    try:
+        message_id = resp.json().get("messageId")
+    except Exception:
+        message_id = None
+    logger.info("brevo: send to %s succeeded (messageId=%s)", to, message_id)

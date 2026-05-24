@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     gmail_app_password: str
     reset_token_expiry_hours: int = 1
 
+    # Email — Brevo HTTP API (password reset emails, replaces Gmail SMTP)
+    brevo_api_key: str
+    brevo_sender_email: str
+    brevo_sender_name: str = "HomieGhor"
+
     # App
     app_env: Literal["development", "production"] = "development"
     app_timezone: str = "Asia/Dhaka"
