@@ -1,15 +1,20 @@
-"""Email service (Resend SDK v2).
+"""Email service — Resend SDK (invite emails) + Gmail SMTP (password reset).
 
-All SDK calls run in asyncio.to_thread() — the resend library is synchronous
-and would block the event loop if called directly.
+All blocking I/O runs in asyncio.to_thread() so the event loop is never stalled.
 
-Security rule: temp_password and reset_token are NEVER written to any
-logger call in this module.  The dev console stub may print them to stdout,
-but only when APP_ENV=development, and never via the logging system.
+Security rules:
+- temp_password and reset_token are NEVER written to any logger call.
+- GMAIL_APP_PASSWORD is never included in error messages or repr output.
+- The dev console stub may print sensitive values to stdout only when
+  APP_ENV=development, and never via the logging system.
 """
 import asyncio
 import logging
+import smtplib
+import ssl
 import uuid
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from html import escape
 
 import resend
@@ -111,41 +116,31 @@ def _invite_bodies(
     return html, text
 
 
-def _reset_bodies(to_name: str, reset_url: str) -> tuple[str, str]:
-    n, ru = escape(to_name), escape(reset_url)
-    html = f"""\
-<div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#222;">
-  <h2>Reset your password</h2>
-  <p>Hi {n},</p>
-  <p>We received a password-reset request for your
-     <strong>{escape(settings.email_from_name)}</strong> account.
-     Click the button below to set a new password:</p>
-  <p style="margin:24px 0;">
-    <a href="{ru}"
-       style="background:#2563eb;color:#fff;padding:10px 22px;border-radius:6px;
-              text-decoration:none;font-weight:bold;display:inline-block;">
-      Reset password
-    </a>
-  </p>
-  <p style="color:#666;font-size:14px;">
-    This link expires in <strong>30 minutes</strong>.
-    If you did not request a reset, you can safely ignore this email —
-    your password will not change.
-  </p>
-  <hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
-  <p style="color:#999;font-size:12px;">
-    If the button does not work, paste this URL into your browser:<br>
-    <span style="word-break:break-all;">{ru}</span>
-  </p>
-</div>"""
-    text = (
-        f"Hi {to_name},\n\n"
-        f"Reset your {settings.email_from_name} password by visiting:\n\n"
-        f"{reset_url}\n\n"
-        f"This link expires in 30 minutes.\n"
-        f"If you did not request a reset, ignore this email."
-    )
-    return html, text
+# ---------------------------------------------------------------------------
+# Gmail SMTP backend (password reset emails)
+# ---------------------------------------------------------------------------
+
+def _send_smtp_blocking(to: str, subject: str, html_body: str, text_body: str) -> None:
+    """Synchronous Gmail SMTP sender — call only via asyncio.to_thread()."""
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = settings.gmail_sender
+    msg["To"] = to
+    msg.attach(MIMEText(text_body, "plain"))
+    msg.attach(MIMEText(html_body, "html"))
+    ctx = ssl.create_default_context()
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx) as smtp:
+            smtp.login(settings.gmail_sender, settings.gmail_app_password)
+            smtp.send_message(msg)
+    except Exception as exc:
+        # Never include credentials in the error message.
+        raise RuntimeError(f"Failed to send email to {to}") from exc
+
+
+async def send_email(to: str, subject: str, html_body: str, text_body: str) -> None:
+    """Async wrapper — runs the blocking SMTP call on a thread pool."""
+    await asyncio.to_thread(_send_smtp_blocking, to, subject, html_body, text_body)
 
 
 # ---------------------------------------------------------------------------
@@ -180,32 +175,54 @@ async def send_invite_email(
     return msg_id
 
 
-async def send_password_reset_email(
-    to_email: str,
-    to_name: str,
-    reset_token: str,  # noqa: ARG001 — caller passes it; not used here, not logged
-    reset_url: str,
-) -> str:
-    """Send a password-reset link.
+async def send_password_reset_email(to: str, reset_link: str) -> None:
+    """Send a password-reset link via Gmail SMTP.
 
-    reset_url already contains the token embedded by the caller.
-    reset_token is accepted in the signature for consistency with the auth
-    router interface but is never logged or written to any output here.
+    reset_link already contains the raw token embedded by the caller.
+    The link is included in the email body (that is its purpose) and is
+    never written to any log statement.
 
-    Returns the Resend message ID. Raises RuntimeError on send failure.
+    Raises RuntimeError on send failure.
     """
-    html, text = _reset_bodies(to_name, reset_url)
-    params: dict = {
-        "from": _FROM,
-        "to": [to_email],
-        "subject": f"Reset your {settings.email_from_name} password",
-        "html": html,
-        "text": text,
-    }
+    expiry = settings.reset_token_expiry_hours
+    unit = "hour" if expiry == 1 else "hours"
+    rl = escape(reset_link)
+    html = f"""\
+<div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#222;">
+  <h2>Reset your HomieGhor password</h2>
+  <p>We received a request to reset the password for your HomieGhor account.</p>
+  <p style="margin:24px 0;">
+    <a href="{rl}"
+       style="background:#2563eb;color:#fff;padding:10px 22px;border-radius:6px;
+              text-decoration:none;font-weight:bold;display:inline-block;">
+      Reset password
+    </a>
+  </p>
+  <p style="color:#666;font-size:14px;">
+    This link expires in <strong>{expiry} {unit}</strong>.
+    If you did not request a reset, you can safely ignore this email —
+    your password will not change.
+  </p>
+  <hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
+  <p style="color:#999;font-size:12px;">
+    If the button does not work, paste this URL into your browser:<br>
+    <span style="word-break:break-all;">{rl}</span>
+  </p>
+</div>"""
+    text = (
+        f"Reset your HomieGhor password by visiting:\n\n"
+        f"{reset_link}\n\n"
+        f"This link expires in {expiry} {unit}.\n"
+        f"If you did not request a reset, ignore this email."
+    )
     try:
-        msg_id = await asyncio.to_thread(_send_fn, params)
-    except Exception as exc:
-        logger.error("Password reset email failed for %s: %s", to_email, exc)
-        raise RuntimeError(f"Could not send password reset email to {to_email}") from exc
-    logger.info("Password reset email sent to %s (msg_id=%s)", to_email, msg_id)
-    return msg_id
+        await send_email(
+            to=to,
+            subject="Reset your HomieGhor password",
+            html_body=html,
+            text_body=text,
+        )
+    except RuntimeError:
+        logger.error("Password reset email failed to deliver to %s", to)
+        raise
+    logger.info("Password reset email sent to %s", to)

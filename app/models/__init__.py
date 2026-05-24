@@ -10,6 +10,7 @@ from app.models.expenses import (
     ShoppingItem,
     UtilityBill,
 )
+from app.models.password_reset_token import PasswordResetToken
 from app.models.settlement import AuditLog, Month, Settlement
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     "ItemCatalog",
     "MealLog",
     "Month",
+    "PasswordResetToken",
     "Room",
     "RoomAssignment",
     "SecurityDeposit",

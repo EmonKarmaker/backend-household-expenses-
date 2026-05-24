@@ -30,11 +30,16 @@ class Settings(BaseSettings):
     max_photo_width: int = 800
     photo_quality: int = 85
 
-    # Email
+    # Email — Resend (invite emails)
     resend_api_key: str
     email_from: str
     email_from_name: str = "Household Expenses"
     frontend_url: str = "http://localhost:3000"
+
+    # Email — Gmail SMTP (password reset emails)
+    gmail_sender: str
+    gmail_app_password: str
+    reset_token_expiry_hours: int = 1
 
     # App
     app_env: Literal["development", "production"] = "development"
