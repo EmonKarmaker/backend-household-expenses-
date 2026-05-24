@@ -77,8 +77,10 @@ async def _send_reset_email_bg(to: str, reset_link: str) -> None:
     Errors are logged but not surfaced — the 200 response has already
     been sent by the time this runs.
     """
+    logger.info("_send_reset_email_bg: starting send to %s", to)
     try:
         await send_password_reset_email(to=to, reset_link=reset_link)
+        logger.info("_send_reset_email_bg: send completed to %s", to)
     except Exception:
         logger.exception("Password reset email failed to deliver to %s", to)
 
@@ -153,12 +155,19 @@ async def forgot_password(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> MessageResponse:
+    normalized = body.email.strip().lower()
+    logger.info("forgot_password: received request for %s", normalized)
+
     result = await db.execute(
-        select(User).where(func.lower(User.email) == body.email.strip().lower())
+        select(User).where(func.lower(User.email) == normalized)
     )
     user = result.scalar_one_or_none()
 
-    if user is not None and user.left_at is None:
+    if user is None:
+        logger.info("forgot_password: no user found for %s", normalized)
+    elif user.left_at is not None:
+        logger.info("forgot_password: user %s is soft-deleted (left_at=%s)", normalized, user.left_at)
+    else:
         raw_token = secrets.token_urlsafe(48)
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
         db.add(
@@ -169,11 +178,13 @@ async def forgot_password(
                 + timedelta(hours=settings.reset_token_expiry_hours),
             )
         )
+        await db.commit()
+        logger.info("forgot_password: token row committed for user_id=%s", user.id)
+
         reset_link = f"{settings.frontend_url}/reset-password?token={raw_token}"
         background_tasks.add_task(_send_reset_email_bg, to=user.email, reset_link=reset_link)
-        logger.info("Password reset token created for user_id=%s", user.id)
+        logger.info("forgot_password: background task scheduled for user_id=%s, sending to %s", user.id, user.email)
 
-    # Always return 200 — never reveal whether the email is registered.
     return MessageResponse(message="If an account with that email exists, a reset link has been sent.")
 
 

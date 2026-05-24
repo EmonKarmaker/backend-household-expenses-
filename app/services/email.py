@@ -122,6 +122,7 @@ def _invite_bodies(
 
 def _send_smtp_blocking(to: str, subject: str, html_body: str, text_body: str) -> None:
     """Synchronous Gmail SMTP sender — call only via asyncio.to_thread()."""
+    logger.info("smtp: building message from %s to %s", settings.gmail_sender, to)
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = settings.gmail_sender
@@ -130,9 +131,13 @@ def _send_smtp_blocking(to: str, subject: str, html_body: str, text_body: str) -
     msg.attach(MIMEText(html_body, "html"))
     ctx = ssl.create_default_context()
     try:
+        logger.info("smtp: connecting to smtp.gmail.com:465")
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx) as smtp:
+            logger.info("smtp: connected, logging in as %s", settings.gmail_sender)
             smtp.login(settings.gmail_sender, settings.gmail_app_password)
+            logger.info("smtp: login successful, sending message")
             smtp.send_message(msg)
+            logger.info("smtp: send_message returned cleanly to %s", to)
     except Exception as exc:
         # Never include credentials in the error message.
         raise RuntimeError(f"Failed to send email to {to}") from exc
