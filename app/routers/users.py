@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.database import get_db
@@ -57,9 +58,27 @@ settings = get_settings()
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _user_resp(user: User) -> UserResponse:
+    return UserResponse(
+        id=user.id,
+        household_id=user.household_id,
+        household_name=user.household.name,
+        name=user.name,
+        email=user.email,
+        joined_at=user.joined_at,
+        left_at=user.left_at,
+        is_admin=user.is_admin,
+        must_change_password=user.must_change_password,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+    )
+
+
 async def _get_user_or_404(user_id: int, household_id: int, db: AsyncSession) -> User:
     result = await db.execute(
-        select(User).where(User.id == user_id, User.household_id == household_id)
+        select(User)
+        .options(selectinload(User.household))
+        .where(User.id == user_id, User.household_id == household_id)
     )
     user = result.scalar_one_or_none()
     if user is None:
@@ -92,10 +111,11 @@ async def list_users(
 ) -> list[UserResponse]:
     result = await db.execute(
         select(User)
+        .options(selectinload(User.household))
         .where(User.household_id == current_user.household_id)
         .order_by(User.name)
     )
-    return [UserResponse.model_validate(u) for u in result.scalars().all()]
+    return [_user_resp(u) for u in result.scalars().all()]
 
 
 @router.get("/{user_id}", response_model=UserResponse)
@@ -105,7 +125,7 @@ async def get_user(
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
     user = await _get_user_or_404(user_id, current_user.household_id, db)
-    return UserResponse.model_validate(user)
+    return _user_resp(user)
 
 
 @router.post("/invite", response_model=InviteUserResponse, status_code=status.HTTP_201_CREATED)
@@ -141,6 +161,7 @@ async def invite_user(
     db.add(user)
     await db.flush()
     await db.refresh(user)
+    await db.refresh(user, attribute_names=["household"])
 
     db.add(RoomAssignment(
         room_id=body.room_id,
@@ -181,7 +202,7 @@ async def invite_user(
     except RuntimeError:
         logger.error("Invite email failed for user_id=%s", user.id)
 
-    return InviteUserResponse(user=UserResponse.model_validate(user), email_sent=email_sent)
+    return InviteUserResponse(user=_user_resp(user), email_sent=email_sent)
 
 
 @router.patch("/{user_id}", response_model=UserResponse)
@@ -200,7 +221,7 @@ async def update_user(
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
 
     if not updates:
-        return UserResponse.model_validate(user)
+        return _user_resp(user)
 
     if "email" in updates:
         new_email = updates["email"].strip().lower()
@@ -222,6 +243,7 @@ async def update_user(
 
     await db.flush()
     await db.refresh(user)
+    await db.refresh(user, attribute_names=["household"])
 
     await log_audit(
         db,
@@ -233,7 +255,7 @@ async def update_user(
         after=model_to_dict(user),
     )
     logger.info("User id=%s updated by user_id=%s", user.id, current_user.id)
-    return UserResponse.model_validate(user)
+    return _user_resp(user)
 
 
 @router.post(
@@ -319,6 +341,7 @@ async def transfer_admin(
     await db.flush()
     await db.refresh(current_user)
     await db.refresh(target)
+    await db.refresh(target, attribute_names=["household"])
 
     note = f"admin role transferred from user_id={current_user.id} to user_id={target.id}"
     await log_audit(
@@ -344,7 +367,7 @@ async def transfer_admin(
     logger.info(
         "Admin transferred from user_id=%s to user_id=%s", current_user.id, target.id
     )
-    return UserResponse.model_validate(target)
+    return _user_resp(target)
 
 
 @router.post("/{user_id}/process-leaving", response_model=ProcessLeavingResponse)

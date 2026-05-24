@@ -66,4 +66,16 @@ async def setup_initialize(
     db.add(user)
     await db.flush()  # assigns user.id before we build the response
 
-    return UserResponse.model_validate(user)
+    return UserResponse(
+        id=user.id,
+        household_id=user.household_id,
+        household_name=household.name,
+        name=user.name,
+        email=user.email,
+        joined_at=user.joined_at,
+        left_at=user.left_at,
+        is_admin=user.is_admin,
+        must_change_password=user.must_change_password,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+    )

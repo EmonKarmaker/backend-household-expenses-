@@ -43,6 +43,22 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+
+def _user_resp(user: User) -> UserResponse:
+    return UserResponse(
+        id=user.id,
+        household_id=user.household_id,
+        household_name=user.household.name,
+        name=user.name,
+        email=user.email,
+        joined_at=user.joined_at,
+        left_at=user.left_at,
+        is_admin=user.is_admin,
+        must_change_password=user.must_change_password,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+    )
+
 # Computed once at import time. bcrypt is always called in login — even when
 # no user with that email exists — so the response time is constant and
 # doesn't leak whether the address is registered.
@@ -112,7 +128,7 @@ async def login(
 
 @router.get("/me", response_model=UserResponse)
 async def me(current_user: User = Depends(get_current_user)) -> UserResponse:
-    return UserResponse.model_validate(current_user)
+    return _user_resp(current_user)
 
 
 @router.post("/change-password", response_model=UserResponse)
@@ -141,7 +157,7 @@ async def change_password(
     )
     logger.info("Password changed for user_id=%s", current_user.id)
 
-    return UserResponse.model_validate(current_user)
+    return _user_resp(current_user)
 
 
 @router.post("/forgot-password", status_code=status.HTTP_200_OK)

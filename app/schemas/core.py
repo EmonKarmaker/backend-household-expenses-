@@ -92,6 +92,7 @@ class UserResponse(BaseModel):
 
     id: int
     household_id: int
+    household_name: str
     name: str
     email: str
     joined_at: date
