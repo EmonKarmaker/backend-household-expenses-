@@ -159,26 +159,51 @@ async def send_invite_email(
     temp_password: str,
     login_url: str,
 ) -> str:
-    """Send a flatmate invitation with their temporary password.
+    """Send a flatmate invitation with their temporary password via Brevo HTTP API.
 
-    Returns the Resend message ID. Raises RuntimeError on send failure.
+    Returns the Brevo message ID. Raises RuntimeError on send failure.
     temp_password is never written to any log statement.
     """
     html, text = _invite_bodies(to_name, to_email, temp_password, login_url)
-    params: dict = {
-        "from": _FROM,
-        "to": [to_email],
+    payload = {
+        "sender": {
+            "email": settings.brevo_sender_email,
+            "name": settings.brevo_sender_name,
+        },
+        "to": [{"email": to_email}],
         "subject": f"You have been added to {settings.email_from_name}",
-        "html": html,
-        "text": text,
+        "htmlContent": html,
+        "textContent": text,
     }
+    headers = {
+        "api-key": settings.brevo_api_key,
+        "accept": "application/json",
+        "content-type": "application/json",
+    }
+
+    logger.info("brevo: sending invite to %s via Brevo HTTP API", to_email)
     try:
-        msg_id = await asyncio.to_thread(_send_fn, params)
-    except Exception as exc:
-        logger.error("Invite email failed for %s: %s", to_email, exc)
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                "https://api.brevo.com/v3/smtp/email",
+                json=payload,
+                headers=headers,
+            )
+    except httpx.HTTPError as exc:
+        logger.error("brevo: HTTP transport error sending invite to %s: %s", to_email, exc)
         raise RuntimeError(f"Could not send invite email to {to_email}") from exc
-    logger.info("Invite email sent to %s (msg_id=%s)", to_email, msg_id)
-    return msg_id
+
+    if resp.status_code >= 400:
+        try:
+            err_body = resp.json()
+        except Exception:
+            err_body = resp.text[:500]
+        logger.error("brevo: invite send to %s failed with status %s: %s", to_email, resp.status_code, err_body)
+        raise RuntimeError(f"Could not send invite email to {to_email}")
+
+    message_id = resp.json().get("messageId")
+    logger.info("brevo: invite to %s succeeded (messageId=%s)", to_email, message_id)
+    return str(message_id) if message_id is not None else ""
 
 
 async def send_password_reset_email(to: str, reset_link: str) -> None:
