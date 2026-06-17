@@ -10,6 +10,7 @@ from app.models.expenses import (
     ShoppingItem,
     UtilityBill,
 )
+from app.models.funds import Fund, FundDeposit, FundExpense
 from app.models.password_reset_token import PasswordResetToken
 from app.models.settlement import AuditLog, Month, Settlement
 
@@ -18,6 +19,9 @@ __all__ = [
     "AssetRefund",
     "AuditLog",
     "Comment",
+    "Fund",
+    "FundDeposit",
+    "FundExpense",
     "Household",
     "ItemCatalog",
     "MealLog",

@@ -37,13 +37,13 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
 
     # Email — Gmail SMTP (password reset emails)
-    gmail_sender: str
-    gmail_app_password: str
+    gmail_sender: str | None = None
+    gmail_app_password: str | None = None
     reset_token_expiry_hours: int = 1
 
     # Email — Brevo HTTP API (password reset emails, replaces Gmail SMTP)
-    brevo_api_key: str
-    brevo_sender_email: str
+    brevo_api_key: str | None = None
+    brevo_sender_email: str | None = None
     brevo_sender_name: str = "HomieGhor"
 
     # App
