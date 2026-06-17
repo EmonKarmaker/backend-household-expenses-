@@ -11,6 +11,7 @@ from app.models.expenses import (
     UtilityBill,
 )
 from app.models.funds import Fund, FundDeposit, FundExpense
+from app.models.meal_governance import MealDispute, MealEditPermission
 from app.models.password_reset_token import PasswordResetToken
 from app.models.settlement import AuditLog, Month, Settlement
 
@@ -24,6 +25,8 @@ __all__ = [
     "FundExpense",
     "Household",
     "ItemCatalog",
+    "MealDispute",
+    "MealEditPermission",
     "MealLog",
     "Month",
     "PasswordResetToken",
