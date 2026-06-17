@@ -13,6 +13,7 @@ from app.database import get_db
 from app.models.core import User
 from app.models.expenses import MealLog
 from app.models.settlement import Month
+from app.routers.meal_governance import has_meal_edit_permission
 from app.schemas.core import UserMini
 from app.schemas.expenses import MealLogBulkUpsertRequest, MealLogResponse, MealLogUpdate
 from app.utils.audit import log_audit, model_to_dict
@@ -49,12 +50,23 @@ async def _get_log_or_404(log_id: int, household_id: int, db: AsyncSession) -> M
     return log
 
 
-def _require_self_or_admin(log: MealLog, current_user: User) -> None:
-    if not current_user.is_admin and log.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot modify another user's meal log",
-        )
+async def _require_self_or_grant(
+    log: MealLog, current_user: User, db: AsyncSession
+) -> None:
+    """Allow editing one's own log freely; an admin editing another member's
+    log needs an approved meal-edit grant for that member + the log's month.
+    """
+    if log.user_id == current_user.id:
+        return
+    month = log.log_date.strftime("%Y-%m")
+    if current_user.is_admin and await has_meal_edit_permission(
+        db, current_user.household_id, log.user_id, month
+    ):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Cannot modify another user's meal log",
+    )
 
 
 async def _require_open_month(month: str, household_id: int, db: AsyncSession) -> None:
@@ -199,6 +211,29 @@ async def bulk_upsert(
     for month_str in {e.log_date.strftime("%Y-%m") for e in body.entries}:
         await _require_open_month(month_str, current_user.household_id, db)
 
+    # Admin editing another member's meals needs an approved grant for that
+    # member + month. (Non-admins were already blocked from foreign ids above;
+    # own entries never need a grant.) All-or-nothing: if any foreign entry
+    # lacks a grant, reject the whole request before applying anything.
+    foreign_pairs = {
+        (e.user_id, e.log_date.strftime("%Y-%m"))
+        for e in body.entries
+        if e.user_id != current_user.id
+    }
+    missing = [
+        (uid, month_str)
+        for uid, month_str in sorted(foreign_pairs)
+        if not await has_meal_edit_permission(
+            db, current_user.household_id, uid, month_str
+        )
+    ]
+    if missing:
+        detail = "; ".join(
+            f"No approved meal-edit permission for user_id={uid} in {month_str}"
+            for uid, month_str in missing
+        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+
     # Batch upsert — one SQL round-trip regardless of row count
     values = [
         {
@@ -270,7 +305,7 @@ async def update_log(
     db: AsyncSession = Depends(get_db),
 ) -> MealLogResponse:
     log = await _get_log_or_404(log_id, current_user.household_id, db)
-    _require_self_or_admin(log, current_user)
+    await _require_self_or_grant(log, current_user, db)
     await _require_open_month(log.log_date.strftime("%Y-%m"), current_user.household_id, db)
 
     updates = body.model_dump(exclude_unset=True)
@@ -328,7 +363,7 @@ async def delete_log(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     log = await _get_log_or_404(log_id, current_user.household_id, db)
-    _require_self_or_admin(log, current_user)
+    await _require_self_or_grant(log, current_user, db)
     await _require_open_month(log.log_date.strftime("%Y-%m"), current_user.household_id, db)
 
     before = model_to_dict(log)
