@@ -1,13 +1,16 @@
-"""Schemas for meal governance — the per-month meal-edit permission flow.
+"""Schemas for meal governance.
 
-Disputes are handled in a separate prompt/module; this file covers only the
-MealEditPermission request / approve / reject flow.
+Two flows:
+- the per-month meal-edit permission flow (request / approve / reject), and
+- the meal dispute flow (a member disputes a meal log; an admin resolves it).
 """
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from app.schemas.core import MonthStr, UserMini
+from app.schemas.expenses import MealLogResponse
 
 
 # ---------------------------------------------------------------------------
@@ -39,3 +42,37 @@ class MealPermissionResponse(BaseModel):
     reject_reason: str | None = None
     requested_at: datetime
     resolved_at: datetime | None = None
+
+
+# ---------------------------------------------------------------------------
+# Dispute — request body
+# ---------------------------------------------------------------------------
+
+# Non-empty after trimming surrounding whitespace (blank reason → 422).
+NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+class MealDisputeCreate(BaseModel):
+    meal_log_id: int
+    reason: NonEmptyStr
+
+
+# ---------------------------------------------------------------------------
+# Dispute — response
+# ---------------------------------------------------------------------------
+
+class MealDisputeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    household_id: int
+    meal_log_id: int
+    raised_by_user: UserMini
+    reason: str
+    status: str
+    resolved_by_user: UserMini | None = None
+    created_at: datetime
+    resolved_at: datetime | None = None
+    # Snapshot of the disputed log so the admin sees WHAT is being disputed
+    # without a second fetch.
+    meal_log: MealLogResponse

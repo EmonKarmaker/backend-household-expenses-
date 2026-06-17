@@ -1,26 +1,32 @@
-"""Meal governance router — the per-month meal-edit permission flow.
+"""Meal governance router — meal-edit permissions and meal disputes.
 
-An admin requests permission to edit a specific member's meals for a month
-("YYYY-MM"). The member approves or rejects (with an optional reason). One
-grant per member per month is enforced by a unique constraint; a rejected
-request may be re-raised, which resets it to pending.
+Permission flow: an admin requests permission to edit a specific member's
+meals for a month ("YYYY-MM"); the member approves or rejects. One grant per
+member per month (unique constraint); a rejected request may be re-raised.
 
-This module covers ONLY the permission flow. Disputes and the actual gating
-of meal-edit endpoints are handled in later prompts. The reusable
-`has_meal_edit_permission` helper is exported here for that later gating.
+Dispute flow: any member disputes a meal log entry they believe is wrong; an
+admin reviews open disputes and resolves them (resolution just closes the
+dispute — it does not auto-edit the meal log).
+
+The reusable `has_meal_edit_permission` helper is exported here for the
+meal-edit gating in app/routers/meals.py.
 """
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db, utcnow
 from app.models.core import User
-from app.models.meal_governance import MealEditPermission
+from app.models.expenses import MealLog
+from app.models.meal_governance import MealDispute, MealEditPermission
 from app.schemas.core import UserMini
+from app.schemas.expenses import MealLogResponse
 from app.schemas.meal_governance import (
+    MealDisputeCreate,
+    MealDisputeResponse,
     MealPermissionReject,
     MealPermissionRequest,
     MealPermissionResponse,
@@ -28,6 +34,7 @@ from app.schemas.meal_governance import (
 from app.utils.permissions import get_current_user, require_admin
 
 router = APIRouter()
+dispute_router = APIRouter()
 
 _PERMISSION_LOAD_OPTIONS = (
     selectinload(MealEditPermission.admin_user),
@@ -245,3 +252,191 @@ async def reject_permission(
     perm.resolved_at = utcnow()
     await db.flush()
     return _build_permission_response(perm)
+
+
+# ===========================================================================
+# Meal disputes  (mounted under /api/v1/meal-disputes)
+# ===========================================================================
+
+_DISPUTE_LOAD_OPTIONS = (
+    selectinload(MealDispute.raised_by_user),
+    selectinload(MealDispute.resolved_by_user),
+    selectinload(MealDispute.meal_log).selectinload(MealLog.user),
+)
+
+
+async def _get_household_meal_log(
+    meal_log_id: int, household_id: int, db: AsyncSession
+) -> MealLog | None:
+    """Return the meal log if it belongs to this household, else None."""
+    result = await db.execute(
+        select(MealLog)
+        .join(User, MealLog.user_id == User.id)
+        .where(MealLog.id == meal_log_id, User.household_id == household_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _get_dispute_or_404(
+    dispute_id: int, household_id: int, db: AsyncSession
+) -> MealDispute:
+    result = await db.execute(
+        select(MealDispute)
+        .where(
+            MealDispute.id == dispute_id,
+            MealDispute.household_id == household_id,
+        )
+        .options(*_DISPUTE_LOAD_OPTIONS)
+        .execution_options(populate_existing=True)
+    )
+    dispute = result.scalar_one_or_none()
+    if dispute is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Dispute not found"
+        )
+    return dispute
+
+
+def _build_dispute_response(d: MealDispute) -> MealDisputeResponse:
+    log = d.meal_log
+    return MealDisputeResponse(
+        id=d.id,
+        household_id=d.household_id,
+        meal_log_id=d.meal_log_id,
+        raised_by_user=UserMini(id=d.raised_by_user.id, name=d.raised_by_user.name),
+        reason=d.reason,
+        status=d.status,
+        resolved_by_user=(
+            UserMini(id=d.resolved_by_user.id, name=d.resolved_by_user.name)
+            if d.resolved_by_user is not None
+            else None
+        ),
+        created_at=d.created_at,
+        resolved_at=d.resolved_at,
+        meal_log=MealLogResponse(
+            id=log.id,
+            user=UserMini(id=log.user.id, name=log.user.name),
+            log_date=log.log_date,
+            meal_count=log.meal_count,
+            guest_meals=log.guest_meals,
+            total_meals=log.total_meals,
+            note=log.note,
+            created_at=log.created_at,
+            updated_at=log.updated_at,
+        ),
+    )
+
+
+@dispute_router.post("", response_model=MealDisputeResponse)
+async def raise_dispute(
+    body: MealDisputeCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MealDisputeResponse:
+    log = await _get_household_meal_log(body.meal_log_id, current_user.household_id, db)
+    if log is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Meal log not found in this household",
+        )
+
+    # One open dispute per (user, log) — re-raising while one is open is a no-op.
+    existing = await db.execute(
+        select(MealDispute.id).where(
+            MealDispute.meal_log_id == body.meal_log_id,
+            MealDispute.raised_by == current_user.id,
+            MealDispute.status == "open",
+        )
+    )
+    if existing.first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have an open dispute on this meal log",
+        )
+
+    dispute = MealDispute(
+        household_id=current_user.household_id,
+        meal_log_id=body.meal_log_id,
+        raised_by=current_user.id,
+        reason=body.reason,
+        status="open",
+    )
+    db.add(dispute)
+    await db.flush()
+    dispute = await _get_dispute_or_404(dispute.id, current_user.household_id, db)
+    return _build_dispute_response(dispute)
+
+
+@dispute_router.get("", response_model=list[MealDisputeResponse])
+async def list_disputes(
+    status_filter: Literal["open", "resolved"] | None = Query(None, alias="status"),
+    meal_log_id: int | None = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[MealDisputeResponse]:
+    stmt = select(MealDispute).where(
+        MealDispute.household_id == current_user.household_id
+    )
+    # Admin sees all household disputes; a member sees disputes they raised
+    # plus disputes on their own meal logs.
+    if not current_user.is_admin:
+        stmt = stmt.join(MealLog, MealDispute.meal_log_id == MealLog.id).where(
+            or_(
+                MealDispute.raised_by == current_user.id,
+                MealLog.user_id == current_user.id,
+            )
+        )
+
+    if status_filter is not None:
+        stmt = stmt.where(MealDispute.status == status_filter)
+    if meal_log_id is not None:
+        stmt = stmt.where(MealDispute.meal_log_id == meal_log_id)
+
+    stmt = (
+        stmt.order_by(MealDispute.created_at.desc(), MealDispute.id.desc())
+        .options(*_DISPUTE_LOAD_OPTIONS)
+        .execution_options(populate_existing=True)
+    )
+    result = await db.execute(stmt)
+    return [_build_dispute_response(d) for d in result.scalars().all()]
+
+
+@dispute_router.post("/{dispute_id}/resolve", response_model=MealDisputeResponse)
+async def resolve_dispute(
+    dispute_id: int,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> MealDisputeResponse:
+    dispute = await _get_dispute_or_404(dispute_id, current_user.household_id, db)
+    if dispute.status != "open":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only an open dispute can be resolved",
+        )
+    dispute.status = "resolved"
+    dispute.resolved_by = current_user.id
+    dispute.resolved_at = utcnow()
+    await db.flush()
+    dispute = await _get_dispute_or_404(dispute.id, current_user.household_id, db)
+    return _build_dispute_response(dispute)
+
+
+@dispute_router.delete("/{dispute_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def withdraw_dispute(
+    dispute_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    dispute = await _get_dispute_or_404(dispute_id, current_user.household_id, db)
+    if dispute.raised_by != current_user.id and not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the member who raised the dispute or an admin can withdraw it",
+        )
+    if dispute.status != "open":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A resolved dispute cannot be withdrawn",
+        )
+    await db.delete(dispute)
+    await db.flush()

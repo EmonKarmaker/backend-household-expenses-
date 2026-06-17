@@ -60,3 +60,4 @@ app.include_router(assets.router,      prefix="/api/v1/assets",      tags=["asse
 app.include_router(deposits.router,    prefix="/api/v1/deposits",    tags=["deposits"])
 app.include_router(funds.router,       prefix="/api/v1/funds",       tags=["funds"])
 app.include_router(meal_governance.router, prefix="/api/v1/meal-permissions", tags=["meal-permissions"])
+app.include_router(meal_governance.dispute_router, prefix="/api/v1/meal-disputes", tags=["meal-disputes"])
